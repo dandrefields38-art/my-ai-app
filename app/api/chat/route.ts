@@ -9,23 +9,42 @@ export async function POST(req: Request) {
   try {
     const { message } = await req.json();
 
-    const response = await client.chat.completions.create({
+    if (!message) {
+      return NextResponse.json({ reply: "No message received" });
+    }
+
+    const completion = await client.chat.completions.create({
       model: "gpt-4o-mini",
+      temperature: 0.7,
       messages: [
-        { role: "system", content: "You are a helpful assistant." },
-        { role: "user", content: message },
+        {
+          role: "system",
+          content: `
+You are a helpful, smart AI inside a SaaS app.
+
+Rules:
+- Keep responses clear and useful
+- Avoid long unnecessary explanations
+- Be conversational like ChatGPT
+- If user asks coding, give working code
+- If user is confused, simplify
+          `.trim(),
+        },
+        {
+          role: "user",
+          content: message,
+        },
       ],
     });
 
     return NextResponse.json({
-      reply: response.choices[0].message.content,
+      reply: completion.choices[0].message.content,
     });
-
   } catch (err) {
-    console.log(err);
+    console.log("OPENAI ERROR:", err);
 
     return NextResponse.json({
-      reply: "AI error",
+      reply: "AI error occurred",
     });
   }
 }
