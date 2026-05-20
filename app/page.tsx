@@ -17,102 +17,103 @@ export default function Home() {
 
   // LOAD MESSAGES
   useEffect(() => {
-    const load = async () => {
-      if (!chatId) return setMessages([]);
+    const loadMessages = async () => {
+      if (!chatId) {
+        setMessages([]);
+        return;
+      }
 
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("messages")
         .select("*")
         .eq("chat_id", chatId)
         .order("created_at", { ascending: true });
 
+      if (error) {
+        console.log("LOAD ERROR:", error);
+        return;
+      }
+
       setMessages(
-        data?.map((m: any) => ({
-          role: m.role,
+        ((data || []) as any[]).map((m) => ({
+          role: m.role === "assistant" ? "assistant" : "user",
           content: m.content,
-        })) || []
+        })) as Message[]
       );
     };
 
-    load();
+    loadMessages();
   }, [chatId]);
 
-  // SEND MESSAGE (STREAMING + MEMORY)
+  // SEND MESSAGE
   const sendMessage = async () => {
     if (!chatId || !input.trim()) return;
 
     const text = input;
     setInput("");
 
-    const updatedMessages = [
+    // ✅ FORCE CORRECT TYPE HERE
+    const userMessage: Message = {
+      role: "user",
+      content: text,
+    };
+
+    const updatedMessages: Message[] = [
       ...messages,
-      { role: "user", content: text },
+      userMessage,
     ];
 
     setMessages(updatedMessages);
 
-    // save user message
-    await supabase.from("messages").insert({
-      chat_id: chatId,
-      role: "user",
-      content: text,
-    });
-
-    // auto title
-    if (messages.length === 0) {
-      await supabase
-        .from("chats")
-        .update({ title: text.slice(0, 40) })
-        .eq("id", chatId);
-    }
-
     setLoading(true);
 
-    const history = updatedMessages.map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
-
-    const res = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        message: text,
-        history,
-      }),
-    });
-
-    const reader = res.body?.getReader();
-    const decoder = new TextDecoder();
-
-    let aiText = "";
-
-    setMessages((prev) => [
-      ...prev,
-      { role: "assistant", content: "" },
-    ]);
-
-    while (true) {
-      const { value, done } = await reader!.read();
-      if (done) break;
-
-      aiText += decoder.decode(value);
-
-      setMessages((prev) => {
-        const copy = [...prev];
-        copy[copy.length - 1] = {
-          role: "assistant",
-          content: aiText,
-        };
-        return copy;
+    try {
+      // save user message
+      await supabase.from("messages").insert({
+        chat_id: chatId,
+        role: "user",
+        content: text,
       });
-    }
 
-    await supabase.from("messages").insert({
-      chat_id: chatId,
-      role: "assistant",
-      content: aiText,
-    });
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ message: text }),
+      });
+
+      const data = await res.json().catch(() => null);
+
+      const reply: Message = {
+        role: "assistant",
+        content: data?.reply || "No response from AI",
+      };
+
+      const finalMessages: Message[] = [
+        ...updatedMessages,
+        reply,
+      ];
+
+      setMessages(finalMessages);
+
+      // save assistant message
+      await supabase.from("messages").insert({
+        chat_id: chatId,
+        role: "assistant",
+        content: reply.content,
+      });
+    } catch (err) {
+      console.log("SEND ERROR:", err);
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "Request failed",
+        },
+      ]);
+    }
 
     setLoading(false);
   };
@@ -120,8 +121,10 @@ export default function Home() {
   return (
     <div className="flex h-screen bg-black text-white">
 
+      {/* SIDEBAR */}
       <Sidebar setChatId={setChatId} />
 
+      {/* MAIN CHAT */}
       <div className="flex flex-col flex-1">
 
         {/* MESSAGES */}
@@ -136,7 +139,7 @@ export default function Home() {
           {messages.map((m, i) => (
             <div
               key={i}
-              className={`max-w-xl px-4 py-3 rounded-xl whitespace-pre-wrap ${
+              className={`max-w-xl px-4 py-3 rounded-lg ${
                 m.role === "user"
                   ? "bg-blue-600 ml-auto"
                   : "bg-white/10"
@@ -151,8 +154,6 @@ export default function Home() {
               Thinking...
             </div>
           )}
-
-          <div id="bottom" />
         </div>
 
         {/* INPUT */}
@@ -161,9 +162,11 @@ export default function Home() {
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && sendMessage()}
             placeholder="Message..."
             className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") sendMessage();
+            }}
           />
 
           <button
