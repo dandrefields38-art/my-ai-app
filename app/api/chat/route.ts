@@ -1,69 +1,79 @@
-import OpenAI from "openai";
-
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY!,
-});
+import { getJobs } from "@/lib/jobs";
 
 export async function POST(req: Request) {
   try {
     const { message } = await req.json();
 
     if (!message) {
-      return new Response(JSON.stringify({ reply: "No message provided" }), {
-        status: 400,
-      });
+      return new Response(
+        JSON.stringify({ reply: "No message provided" }),
+        { status: 400 }
+      );
     }
 
-    const completion = await client.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0.7,
-      messages: [
-        {
-          role: "system",
-          content: `
-You are Inquire AI, a chat + job assistant platform.
+    const text = message.toLowerCase();
 
-You help users with:
-- general chat questions
-- job search requests (VERY IMPORTANT)
+    // ---------------------------------------
+    // 💼 JOB SYSTEM (HYBRID AI + REAL API)
+    // ---------------------------------------
+    if (text.includes("job") || text.includes("jobs")) {
+      const jobs = await getJobs(message);
 
-JOB RULES:
-If the user asks about jobs:
-- identify job type (example: warehouse, retail, delivery, office)
-- identify location (city, state)
-- respond in a structured, helpful way
-- keep answers short and clear
+      const formattedJobs = jobs
+        .map(
+          (job: any) =>
+            `💼 ${job.title}\n🏢 ${job.company}\n📍 ${job.location}\n🔗 ${job.url}`
+        )
+        .join("\n\n");
 
-Do NOT hallucinate real job listings.
-Assume job data comes from a backend API.
+      return new Response(
+        JSON.stringify({
+          reply: `Here are some jobs I found:\n\n${formattedJobs}`,
+        })
+      );
+    }
 
-Be helpful, simple, and direct.
-          `.trim(),
-        },
-        {
-          role: "user",
-          content: message,
-        },
-      ],
-    });
-
-    return new Response(
-      JSON.stringify({
-        reply: completion.choices[0].message.content,
-      }),
+    // ---------------------------------------
+    // 🤖 NORMAL AI CHAT (FALLBACK)
+    // ---------------------------------------
+    const aiResponse = await fetch(
+      "https://api.openai.com/v1/chat/completions",
       {
-        headers: { "Content-Type": "application/json" },
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are a helpful assistant inside a SaaS chat app.",
+            },
+            {
+              role: "user",
+              content: message,
+            },
+          ],
+        }),
       }
     );
+
+    const data = await aiResponse.json();
+
+    const reply =
+      data?.choices?.[0]?.message?.content ||
+      "Sorry, I couldn't respond.";
+
+    return new Response(JSON.stringify({ reply }));
   } catch (err) {
-    console.log("CHAT API ERROR:", err);
+    console.log("Chat API error:", err);
 
     return new Response(
-      JSON.stringify({ reply: "AI error occurred" }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      }
+      JSON.stringify({ reply: "Server error" }),
+      { status: 500 }
     );
   }
 }

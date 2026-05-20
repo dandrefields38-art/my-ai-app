@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { SignOutButton, useUser } from "@clerk/nextjs";
 
 export default function Sidebar({
   setChatId,
@@ -10,73 +9,121 @@ export default function Sidebar({
   setChatId: (id: string) => void;
 }) {
   const [chats, setChats] = useState<any[]>([]);
-  const { user } = useUser();
+  const [user, setUser] = useState<any>(null);
 
+  // LOAD USER
   useEffect(() => {
-    const load = async () => {
-      if (!user?.id) return;
+    const getUser = async () => {
+      const { data } = await supabase.auth.getUser();
+      setUser(data.user);
+    };
 
+    getUser();
+  }, []);
+
+  // LOAD CHATS
+  useEffect(() => {
+    const loadChats = async () => {
       const { data } = await supabase
         .from("chats")
         .select("*")
-        .eq("user_id", user.id)
         .order("created_at", { ascending: false });
 
       setChats(data || []);
     };
 
-    load();
-  }, [user]);
+    loadChats();
+  }, []);
 
+  // CREATE CHAT
   const createChat = async () => {
-    if (!user?.id) return;
-
     const { data } = await supabase
       .from("chats")
-      .insert({
-        title: "New chat",
-        user_id: user.id,
-      })
+      .insert({ title: "New Chat" })
       .select()
       .single();
 
-    if (!data) return;
-
-    setChats((prev) => [data, ...prev]);
-    setChatId(data.id);
+    if (data) {
+      setChats((prev) => [data, ...prev]);
+      setChatId(data.id);
+    }
   };
 
+  // DELETE CHAT
   const deleteChat = async (id: string) => {
     await supabase.from("chats").delete().eq("id", id);
+
     setChats((prev) => prev.filter((c) => c.id !== id));
   };
 
-  return (
-    <div className="w-72 h-full bg-[#0b0b0f] border-r border-white/10 flex flex-col">
+  // 💰 STRIPE UPGRADE
+  const upgradeToPro = async () => {
+    try {
+      // NOT LOGGED IN
+      if (!user) {
+        window.location.href = "/login";
+        return;
+      }
 
-      {/* HEADER */}
-      <div className="p-4 border-b border-white/10">
+      const res = await fetch("/api/stripe/checkout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId: user.id,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        alert("Stripe checkout failed");
+      }
+    } catch (err) {
+      console.log(err);
+      alert("Upgrade failed");
+    }
+  };
+
+  return (
+    <div className="w-72 h-screen bg-[#0b0b0f] border-r border-white/10 flex flex-col text-white">
+
+      {/* TOP */}
+      <div className="p-4 border-b border-white/10 space-y-2">
+
         <button
           onClick={createChat}
-          className="w-full py-2 bg-white/10 hover:bg-white/20 rounded-lg"
+          className="w-full py-2 rounded-lg bg-white/10 hover:bg-white/20 transition"
         >
           + New Chat
         </button>
+
+        {/* 💰 UPGRADE BUTTON */}
+        <button
+          onClick={upgradeToPro}
+          className="w-full py-2 rounded-lg bg-yellow-500 text-black font-semibold hover:opacity-90 transition"
+        >
+          Upgrade to Pro
+        </button>
+
       </div>
 
-      {/* CHAT LIST */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-1">
+      {/* CHATS */}
+      <div className="flex-1 overflow-y-auto p-2 space-y-2">
 
         {chats.map((chat) => (
           <div
             key={chat.id}
-            className="flex items-center justify-between px-2 py-2 rounded-lg hover:bg-white/10"
+            className="flex items-center justify-between bg-white/5 hover:bg-white/10 rounded-lg px-3 py-2"
           >
             <button
               onClick={() => setChatId(chat.id)}
-              className="text-left text-sm text-white/70 flex-1"
+              className="text-sm text-left flex-1 truncate"
             >
-              {chat.title || "Untitled"}
+              {chat.title || "Untitled Chat"}
             </button>
 
             <button
@@ -90,20 +137,24 @@ export default function Sidebar({
 
       </div>
 
-      {/* FOOTER (SAAS CONTROLS) */}
-      <div className="p-3 border-t border-white/10 flex items-center justify-between">
+      {/* USER INFO */}
+      <div className="p-4 border-t border-white/10 text-xs text-white/50">
 
-        {/* USER INFO */}
-        <div className="text-xs text-white/50">
-          {user?.firstName || user?.emailAddresses?.[0]?.emailAddress}
-        </div>
-
-        {/* SIGN OUT */}
-        <SignOutButton redirectUrl="/sign-in">
-          <button className="text-xs text-red-400 hover:text-red-300">
-            Sign out
-          </button>
-        </SignOutButton>
+        {user ? (
+          <div>
+            Logged in as:
+            <div className="truncate mt-1 text-white/80">
+              {user.email}
+            </div>
+          </div>
+        ) : (
+          <a
+            href="/login"
+            className="text-blue-400"
+          >
+            Login
+          </a>
+        )}
 
       </div>
 

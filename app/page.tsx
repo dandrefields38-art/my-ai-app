@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Sidebar from "./components/Sidebar";
 import { supabase } from "@/lib/supabase";
 
@@ -15,113 +15,72 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // LOAD MESSAGES
+  const bottomRef = useRef<HTMLDivElement | null>(null);
+
+  // auto scroll
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, loading]);
+
+  // load chat messages
   useEffect(() => {
     const loadMessages = async () => {
-      if (!chatId) {
-        setMessages([]);
-        return;
-      }
+      if (!chatId) return;
 
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("messages")
         .select("*")
         .eq("chat_id", chatId)
         .order("created_at", { ascending: true });
 
-      if (error) {
-        console.log(error);
-        return;
+      if (data) {
+        setMessages(
+          data.map((m: any) => ({
+            role: m.role,
+            content: m.content,
+          }))
+        );
       }
-
-      setMessages(
-        ((data || []) as any[]).map((m) => ({
-          role: m.role === "assistant" ? "assistant" : "user",
-          content: m.content,
-        })) as Message[]
-      );
     };
 
     loadMessages();
   }, [chatId]);
 
-  // 🚀 STREAMING SEND MESSAGE
   const sendMessage = async () => {
-    if (!chatId || !input.trim()) return;
+    if (!input.trim()) return;
 
     const text = input;
+
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", content: text },
+    ]);
+
     setInput("");
-
-    const userMessage: Message = {
-      role: "user",
-      content: text,
-    };
-
-    const placeholder: Message = {
-      role: "assistant",
-      content: "",
-    };
-
-    const updatedMessages: Message[] = [
-      ...messages,
-      userMessage,
-      placeholder,
-    ];
-
-    setMessages(updatedMessages);
     setLoading(true);
 
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text }),
       });
 
-      const reader = res.body?.getReader();
-      const decoder = new TextDecoder();
-
-      let result = "";
-
-      while (true) {
-        const { done, value } = await reader!.read();
-        if (done) break;
-
-        result += decoder.decode(value);
-
-        setMessages((prev) => {
-          const copy = [...prev];
-          copy[copy.length - 1] = {
-            role: "assistant",
-            content: result,
-          };
-          return copy;
-        });
-      }
-
-      // save BOTH messages
-      await supabase.from("messages").insert([
-        {
-          chat_id: chatId,
-          role: "user",
-          content: text,
-        },
-        {
-          chat_id: chatId,
-          role: "assistant",
-          content: result,
-        },
-      ]);
-    } catch (err) {
-      console.log(err);
+      const data = await res.json();
 
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: "Request failed",
+          content: data.reply || "No response",
+        },
+      ]);
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "Something went wrong.",
         },
       ]);
     }
@@ -130,63 +89,85 @@ export default function Home() {
   };
 
   return (
-    <div className="flex h-screen bg-black text-white">
+    <div className="flex h-screen bg-[#0a0a0a] text-white">
 
-      {/* SIDEBAR */}
       <Sidebar setChatId={setChatId} />
 
-      {/* MAIN CHAT */}
+      {/* MAIN */}
       <div className="flex flex-col flex-1">
 
-        {/* MESSAGES */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        {/* HEADER */}
+        <div className="border-b border-white/10 p-4 text-sm text-white/70">
+          ChatGPT-style AI Assistant
+        </div>
 
-          {messages.length === 0 && (
-            <div className="text-white/30 text-center mt-20">
-              Create or select a chat
-            </div>
-          )}
+        {/* CHAT */}
+        <div className="flex-1 overflow-y-auto">
 
-          {messages.map((m, i) => (
-            <div
-              key={i}
-              className={`max-w-xl px-4 py-3 rounded-lg ${
-                m.role === "user"
-                  ? "bg-blue-600 ml-auto"
-                  : "bg-white/10"
-              }`}
-            >
-              {m.content}
-            </div>
-          ))}
+          <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
 
-          {loading && (
-            <div className="text-white/40 text-sm">
-              Thinking...
-            </div>
-          )}
+            {messages.length === 0 && (
+              <div className="text-center text-white/30 mt-32">
+                Ask me anything...
+              </div>
+            )}
+
+            {messages.map((m, i) => (
+              <div
+                key={i}
+                className={`flex ${
+                  m.role === "user"
+                    ? "justify-end"
+                    : "justify-start"
+                }`}
+              >
+                <div
+                  className={`px-4 py-3 rounded-2xl max-w-[80%] text-sm leading-relaxed ${
+                    m.role === "user"
+                      ? "bg-blue-600"
+                      : "bg-white/10"
+                  }`}
+                >
+                  {m.content}
+                </div>
+              </div>
+            ))}
+
+            {/* typing indicator */}
+            {loading && (
+              <div className="flex justify-start">
+                <div className="px-4 py-3 rounded-2xl bg-white/10 text-white/60 text-sm animate-pulse">
+                  AI is thinking...
+                </div>
+              </div>
+            )}
+
+            <div ref={bottomRef} />
+          </div>
         </div>
 
         {/* INPUT */}
-        <div className="p-4 border-t border-white/10 flex gap-2">
+        <div className="border-t border-white/10 p-4">
+          <div className="max-w-3xl mx-auto flex gap-2">
 
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Message..."
-            className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2"
-            onKeyDown={(e) => {
-              if (e.key === "Enter") sendMessage();
-            }}
-          />
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Message..."
+              className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-4 py-3 outline-none"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") sendMessage();
+              }}
+            />
 
-          <button
-            onClick={sendMessage}
-            className="px-4 py-2 bg-blue-600 rounded-lg"
-          >
-            Send
-          </button>
+            <button
+              onClick={sendMessage}
+              className="bg-blue-600 px-5 py-3 rounded-2xl hover:bg-blue-700"
+            >
+              Send
+            </button>
 
+          </div>
         </div>
 
       </div>
