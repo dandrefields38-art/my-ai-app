@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
 const client = new OpenAI({
@@ -9,26 +8,14 @@ export async function POST(req: Request) {
   try {
     const { message } = await req.json();
 
-    if (!message) {
-      return NextResponse.json({ reply: "No message received" });
-    }
-
-    const completion = await client.chat.completions.create({
+    const stream = await client.chat.completions.create({
       model: "gpt-4o-mini",
-      temperature: 0.7,
+      stream: true,
       messages: [
         {
           role: "system",
-          content: `
-You are a helpful, smart AI inside a SaaS app.
-
-Rules:
-- Keep responses clear and useful
-- Avoid long unnecessary explanations
-- Be conversational like ChatGPT
-- If user asks coding, give working code
-- If user is confused, simplify
-          `.trim(),
+          content:
+            "You are a helpful SaaS AI assistant. Be concise, clear, and useful.",
         },
         {
           role: "user",
@@ -37,14 +24,27 @@ Rules:
       ],
     });
 
-    return NextResponse.json({
-      reply: completion.choices[0].message.content,
+    const encoder = new TextEncoder();
+
+    const readable = new ReadableStream({
+      async start(controller) {
+        for await (const chunk of stream) {
+          const text = chunk.choices[0]?.delta?.content || "";
+          controller.enqueue(encoder.encode(text));
+        }
+        controller.close();
+      },
+    });
+
+    return new Response(readable, {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-cache",
+      },
     });
   } catch (err) {
-    console.log("OPENAI ERROR:", err);
+    console.log("STREAM ERROR:", err);
 
-    return NextResponse.json({
-      reply: "AI error occurred",
-    });
+    return new Response("AI error", { status: 500 });
   }
 }

@@ -30,7 +30,7 @@ export default function Home() {
         .order("created_at", { ascending: true });
 
       if (error) {
-        console.log("LOAD ERROR:", error);
+        console.log(error);
         return;
       }
 
@@ -45,36 +45,33 @@ export default function Home() {
     loadMessages();
   }, [chatId]);
 
-  // SEND MESSAGE
+  // 🚀 STREAMING SEND MESSAGE
   const sendMessage = async () => {
     if (!chatId || !input.trim()) return;
 
     const text = input;
     setInput("");
 
-    // ✅ FORCE CORRECT TYPE HERE
     const userMessage: Message = {
       role: "user",
       content: text,
     };
 
+    const placeholder: Message = {
+      role: "assistant",
+      content: "",
+    };
+
     const updatedMessages: Message[] = [
       ...messages,
       userMessage,
+      placeholder,
     ];
 
     setMessages(updatedMessages);
-
     setLoading(true);
 
     try {
-      // save user message
-      await supabase.from("messages").insert({
-        chat_id: chatId,
-        role: "user",
-        content: text,
-      });
-
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: {
@@ -83,28 +80,42 @@ export default function Home() {
         body: JSON.stringify({ message: text }),
       });
 
-      const data = await res.json().catch(() => null);
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
 
-      const reply: Message = {
-        role: "assistant",
-        content: data?.reply || "No response from AI",
-      };
+      let result = "";
 
-      const finalMessages: Message[] = [
-        ...updatedMessages,
-        reply,
-      ];
+      while (true) {
+        const { done, value } = await reader!.read();
+        if (done) break;
 
-      setMessages(finalMessages);
+        result += decoder.decode(value);
 
-      // save assistant message
-      await supabase.from("messages").insert({
-        chat_id: chatId,
-        role: "assistant",
-        content: reply.content,
-      });
+        setMessages((prev) => {
+          const copy = [...prev];
+          copy[copy.length - 1] = {
+            role: "assistant",
+            content: result,
+          };
+          return copy;
+        });
+      }
+
+      // save BOTH messages
+      await supabase.from("messages").insert([
+        {
+          chat_id: chatId,
+          role: "user",
+          content: text,
+        },
+        {
+          chat_id: chatId,
+          role: "assistant",
+          content: result,
+        },
+      ]);
     } catch (err) {
-      console.log("SEND ERROR:", err);
+      console.log(err);
 
       setMessages((prev) => [
         ...prev,
