@@ -8,14 +8,37 @@ export async function POST(req: Request) {
   try {
     const { message } = await req.json();
 
-    const stream = await client.chat.completions.create({
+    if (!message) {
+      return new Response(JSON.stringify({ reply: "No message provided" }), {
+        status: 400,
+      });
+    }
+
+    const completion = await client.chat.completions.create({
       model: "gpt-4o-mini",
-      stream: true,
+      temperature: 0.7,
       messages: [
         {
           role: "system",
-          content:
-            "You are a helpful SaaS AI assistant. Be concise, clear, and useful.",
+          content: `
+You are Inquire AI, a chat + job assistant platform.
+
+You help users with:
+- general chat questions
+- job search requests (VERY IMPORTANT)
+
+JOB RULES:
+If the user asks about jobs:
+- identify job type (example: warehouse, retail, delivery, office)
+- identify location (city, state)
+- respond in a structured, helpful way
+- keep answers short and clear
+
+Do NOT hallucinate real job listings.
+Assume job data comes from a backend API.
+
+Be helpful, simple, and direct.
+          `.trim(),
         },
         {
           role: "user",
@@ -24,27 +47,23 @@ export async function POST(req: Request) {
       ],
     });
 
-    const encoder = new TextEncoder();
-
-    const readable = new ReadableStream({
-      async start(controller) {
-        for await (const chunk of stream) {
-          const text = chunk.choices[0]?.delta?.content || "";
-          controller.enqueue(encoder.encode(text));
-        }
-        controller.close();
-      },
-    });
-
-    return new Response(readable, {
-      headers: {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Cache-Control": "no-cache",
-      },
-    });
+    return new Response(
+      JSON.stringify({
+        reply: completion.choices[0].message.content,
+      }),
+      {
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   } catch (err) {
-    console.log("STREAM ERROR:", err);
+    console.log("CHAT API ERROR:", err);
 
-    return new Response("AI error", { status: 500 });
+    return new Response(
+      JSON.stringify({ reply: "AI error occurred" }),
+      {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   }
 }
