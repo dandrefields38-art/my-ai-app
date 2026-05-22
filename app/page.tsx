@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Sidebar from "./components/Sidebar";
 import { supabase } from "@/lib/supabase";
 
@@ -9,20 +9,34 @@ type Message = {
   content: string;
 };
 
+type Chat = {
+  id: string;
+  title: string;
+};
+
 export default function Home() {
   const [chatId, setChatId] = useState<string | null>(null);
+  const [chats, setChats] = useState<Chat[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
 
-  const bottomRef = useRef<HTMLDivElement | null>(null);
-
-  // auto scroll
+  // LOAD CHATS
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+    const loadChats = async () => {
+      const { data } = await supabase
+        .from("chats")
+        .select("*")
+        .order("created_at", { ascending: false });
 
-  // load chat messages
+      if (data) {
+        setChats(data);
+      }
+    };
+
+    loadChats();
+  }, []);
+
+  // LOAD MESSAGES
   useEffect(() => {
     const loadMessages = async () => {
       if (!chatId) return;
@@ -46,128 +60,179 @@ export default function Home() {
     loadMessages();
   }, [chatId]);
 
+  // CREATE CHAT
+  const createChat = async () => {
+    const { data } = await supabase
+      .from("chats")
+      .insert([{ title: "New Chat" }])
+      .select()
+      .single();
+
+    if (data) {
+      setChats((prev) => [data, ...prev]);
+      setChatId(data.id);
+      setMessages([]);
+    }
+  };
+
+  // STREAMING SEND MESSAGE
   const sendMessage = async () => {
-    if (!input.trim()) return;
+    if (!input.trim() || !chatId) return;
 
     const text = input;
 
+    setInput("");
+
+    // show user message
     setMessages((prev) => [
       ...prev,
-      { role: "user", content: text },
+      {
+        role: "user",
+        content: text,
+      },
     ]);
 
-    setInput("");
-    setLoading(true);
+    // placeholder assistant message
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "assistant",
+        content: "",
+      },
+    ]);
 
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: text,
+        }),
       });
 
-      const data = await res.json();
+      const reader = res.body?.getReader();
+
+      if (!reader) return;
+
+      const decoder = new TextDecoder();
+
+      let fullReply = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+
+        fullReply += chunk;
+
+        setMessages((prev) => {
+          const updated = [...prev];
+
+          updated[updated.length - 1] = {
+            role: "assistant",
+            content: fullReply,
+          };
+
+          return updated;
+        });
+      }
+
+      // save messages
+      supabase.from("messages").insert([
+        {
+          chat_id: chatId,
+          role: "user",
+          content: text,
+        },
+        {
+          chat_id: chatId,
+          role: "assistant",
+          content: fullReply,
+        },
+      ]);
+
+    } catch (err) {
+      console.log(err);
 
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: data.reply || "No response",
-        },
-      ]);
-    } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: "Something went wrong.",
+          content: "Request failed",
         },
       ]);
     }
-
-    setLoading(false);
   };
 
   return (
-    <div className="flex h-screen bg-[#0a0a0a] text-white">
+    <div className="flex h-screen bg-black text-white">
 
-      <Sidebar setChatId={setChatId} />
+      {/* SIDEBAR */}
+      <Sidebar
+        chats={chats}
+        currentChatId={chatId}
+        setCurrentChatId={setChatId}
+        createNewChat={createChat}
+      />
 
       {/* MAIN */}
       <div className="flex flex-col flex-1">
 
         {/* HEADER */}
-        <div className="border-b border-white/10 p-4 text-sm text-white/70">
-          ChatGPT-style AI Assistant
+        <div className="p-4 border-b border-white/10">
+          Inquire AI
         </div>
 
-        {/* CHAT */}
-        <div className="flex-1 overflow-y-auto">
+        {/* MESSAGES */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
 
-          <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
+          {!chatId && (
+            <div className="text-white/30 text-center mt-20">
+              Create a chat to begin
+            </div>
+          )}
 
-            {messages.length === 0 && (
-              <div className="text-center text-white/30 mt-32">
-                Ask me anything...
-              </div>
-            )}
+          {messages.map((m, i) => (
+            <div
+              key={i}
+              className={`max-w-xl px-4 py-3 rounded-lg whitespace-pre-wrap ${
+                m.role === "user"
+                  ? "bg-blue-600 ml-auto"
+                  : "bg-white/10"
+              }`}
+            >
+              {m.content}
+            </div>
+          ))}
 
-            {messages.map((m, i) => (
-              <div
-                key={i}
-                className={`flex ${
-                  m.role === "user"
-                    ? "justify-end"
-                    : "justify-start"
-                }`}
-              >
-                <div
-                  className={`px-4 py-3 rounded-2xl max-w-[80%] text-sm leading-relaxed ${
-                    m.role === "user"
-                      ? "bg-blue-600"
-                      : "bg-white/10"
-                  }`}
-                >
-                  {m.content}
-                </div>
-              </div>
-            ))}
-
-            {/* typing indicator */}
-            {loading && (
-              <div className="flex justify-start">
-                <div className="px-4 py-3 rounded-2xl bg-white/10 text-white/60 text-sm animate-pulse">
-                  AI is thinking...
-                </div>
-              </div>
-            )}
-
-            <div ref={bottomRef} />
-          </div>
         </div>
 
         {/* INPUT */}
-        <div className="border-t border-white/10 p-4">
-          <div className="max-w-3xl mx-auto flex gap-2">
+        <div className="p-4 border-t border-white/10 flex gap-2">
 
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Message..."
-              className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-4 py-3 outline-none"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") sendMessage();
-              }}
-            />
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Message Inquire..."
+            className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                sendMessage();
+              }
+            }}
+          />
 
-            <button
-              onClick={sendMessage}
-              className="bg-blue-600 px-5 py-3 rounded-2xl hover:bg-blue-700"
-            >
-              Send
-            </button>
+          <button
+            onClick={sendMessage}
+            className="bg-blue-600 px-4 py-2 rounded-lg"
+          >
+            Send
+          </button>
 
-          </div>
         </div>
 
       </div>

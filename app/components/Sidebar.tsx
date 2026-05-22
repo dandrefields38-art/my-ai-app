@@ -1,163 +1,101 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
+import { useUser, UserButton } from "@clerk/nextjs";
+
+type Chat = {
+  id: string;
+  title: string;
+};
 
 export default function Sidebar({
-  setChatId,
+  chats,
+  currentChatId,
+  setCurrentChatId,
+  createNewChat,
 }: {
-  setChatId: (id: string) => void;
+  chats: Chat[];
+  currentChatId: string | null;
+  setCurrentChatId: (id: string) => void;
+  createNewChat: () => void;
 }) {
-  const [chats, setChats] = useState<any[]>([]);
-  const [user, setUser] = useState<any>(null);
+  const router = useRouter();
+  const { isSignedIn, user } = useUser();
 
-  // LOAD USER
-  useEffect(() => {
-    const getUser = async () => {
-      const { data } = await supabase.auth.getUser();
-      setUser(data.user);
-    };
-
-    getUser();
-  }, []);
-
-  // LOAD CHATS
-  useEffect(() => {
-    const loadChats = async () => {
-      const { data } = await supabase
-        .from("chats")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      setChats(data || []);
-    };
-
-    loadChats();
-  }, []);
-
-  // CREATE CHAT
-  const createChat = async () => {
-    const { data } = await supabase
-      .from("chats")
-      .insert({ title: "New Chat" })
-      .select()
-      .single();
-
-    if (data) {
-      setChats((prev) => [data, ...prev]);
-      setChatId(data.id);
+  const handleUpgrade = async () => {
+    if (!isSignedIn) {
+      router.push("/sign-in");
+      return;
     }
-  };
 
-  // DELETE CHAT
-  const deleteChat = async (id: string) => {
-    await supabase.from("chats").delete().eq("id", id);
+    const res = await fetch("/api/stripe/checkout", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        userId: user?.id,
+      }),
+    });
 
-    setChats((prev) => prev.filter((c) => c.id !== id));
-  };
+    const data = await res.json();
 
-  // 💰 STRIPE UPGRADE
-  const upgradeToPro = async () => {
-    try {
-      // NOT LOGGED IN
-      if (!user) {
-        window.location.href = "/login";
-        return;
-      }
-
-      const res = await fetch("/api/stripe/checkout", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          userId: user.id,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        alert("Stripe checkout failed");
-      }
-    } catch (err) {
-      console.log(err);
-      alert("Upgrade failed");
+    if (data.url) {
+      window.location.href = data.url;
+    } else {
+      alert("Stripe checkout failed");
     }
   };
 
   return (
-    <div className="w-72 h-screen bg-[#0b0b0f] border-r border-white/10 flex flex-col text-white">
-
-      {/* TOP */}
-      <div className="p-4 border-b border-white/10 space-y-2">
-
+    <div className="h-screen w-64 border-r bg-gray-100 flex flex-col">
+      <div className="p-4 space-y-2">
         <button
-          onClick={createChat}
-          className="w-full py-2 rounded-lg bg-white/10 hover:bg-white/20 transition"
+          onClick={createNewChat}
+          className="w-full bg-black text-white p-3 rounded"
         >
           + New Chat
         </button>
 
-        {/* 💰 UPGRADE BUTTON */}
         <button
-          onClick={upgradeToPro}
-          className="w-full py-2 rounded-lg bg-yellow-500 text-black font-semibold hover:opacity-90 transition"
+          onClick={handleUpgrade}
+          className="w-full bg-yellow-400 text-black p-3 rounded"
         >
           Upgrade to Pro
         </button>
-
       </div>
 
-      {/* CHATS */}
       <div className="flex-1 overflow-y-auto p-2 space-y-2">
-
-        {chats.map((chat) => (
-          <div
+        {chats?.map((chat) => (
+          <button
             key={chat.id}
-            className="flex items-center justify-between bg-white/5 hover:bg-white/10 rounded-lg px-3 py-2"
+            onClick={() => setCurrentChatId(chat.id)}
+            className={`w-full text-left p-3 rounded border ${
+              currentChatId === chat.id ? "bg-gray-300" : "bg-white"
+            }`}
           >
-            <button
-              onClick={() => setChatId(chat.id)}
-              className="text-sm text-left flex-1 truncate"
-            >
-              {chat.title || "Untitled Chat"}
-            </button>
-
-            <button
-              onClick={() => deleteChat(chat.id)}
-              className="text-red-400 text-xs ml-2"
-            >
-              ✕
-            </button>
-          </div>
+            {chat.title}
+          </button>
         ))}
-
       </div>
 
-      {/* USER INFO */}
-      <div className="p-4 border-t border-white/10 text-xs text-white/50">
-
-        {user ? (
-          <div>
-            Logged in as:
-            <div className="truncate mt-1 text-white/80">
-              {user.email}
-            </div>
+      <div className="p-4 border-t">
+        {isSignedIn ? (
+          <div className="flex items-center justify-between">
+            <span className="text-xs truncate max-w-[160px]">
+              {user?.primaryEmailAddress?.emailAddress}
+            </span>
+            <UserButton />
           </div>
         ) : (
-          <a
-            href="/login"
-            className="text-blue-400"
+          <button
+            onClick={() => router.push("/sign-in")}
+            className="w-full border p-2 rounded bg-white"
           >
-            Login
-          </a>
+            Sign In
+          </button>
         )}
-
       </div>
-
     </div>
   );
 }
