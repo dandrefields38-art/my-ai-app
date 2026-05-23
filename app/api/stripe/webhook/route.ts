@@ -1,5 +1,15 @@
-import { NextResponse } from "next/server";
+import Stripe from "stripe";
+
+import { headers } from "next/headers";
+
 import { createClient } from "@supabase/supabase-js";
+
+const stripe = new Stripe(
+  process.env.STRIPE_SECRET_KEY!,
+  {
+    apiVersion: "2025-04-30.basil",
+  }
+);
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -7,29 +17,60 @@ const supabase = createClient(
 );
 
 export async function POST(req: Request) {
+  const body = await req.text();
+
+  const signature = headers().get(
+    "stripe-signature"
+  ) as string;
+
+  let event: Stripe.Event;
+
   try {
-    const body = await req.json();
-
-    console.log("WEBHOOK HIT:", body.type);
-
-    if (body.type === "checkout.session.completed") {
-      const userId = body.data?.object?.metadata?.userId;
-
-      if (userId) {
-        await supabase
-          .from("users")
-          .update({ plan: "pro" })
-          .eq("id", userId);
-      }
-    }
-
-    return NextResponse.json({ received: true });
+    event = stripe.webhooks.constructEvent(
+      body,
+      signature,
+      process.env.STRIPE_WEBHOOK_SECRET!
+    );
   } catch (err) {
-    console.log("Webhook error:", err);
+    console.log(err);
 
-    return NextResponse.json(
-      { error: "failed" },
-      { status: 500 }
+    return new Response(
+      "Webhook Error",
+      {
+        status: 400,
+      }
     );
   }
+
+  // PAYMENT SUCCESS
+  if (
+    event.type ===
+    "checkout.session.completed"
+  ) {
+    const session =
+      event.data.object as Stripe.Checkout.Session;
+
+    const clerkUserId =
+      session.metadata?.clerkUserId;
+
+    if (clerkUserId) {
+
+      // MAKE USER PRO
+      await supabase
+        .from("profiles")
+        .upsert({
+          clerk_user_id: clerkUserId,
+          is_pro: true,
+        });
+
+      console.log(
+        "User upgraded to Pro:",
+        clerkUserId
+      );
+    }
+  }
+
+  return new Response("OK", {
+    status: 200,
+  });
 }

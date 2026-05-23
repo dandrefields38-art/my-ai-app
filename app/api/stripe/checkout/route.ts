@@ -1,49 +1,53 @@
 import Stripe from "stripe";
-import { NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2024-06-20",
-});
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
-export async function POST(req: Request) {
+export async function POST() {
   try {
-    const { userId } = await req.json();
+    const { userId } = await auth();
 
     if (!userId) {
-      return NextResponse.json(
-        { error: "Missing userId" },
-        { status: 400 }
+      return Response.json(
+        { error: "You must sign in first" },
+        { status: 401 }
+      );
+    }
+
+    if (!process.env.STRIPE_PRICE_ID) {
+      return Response.json(
+        { error: "Missing STRIPE_PRICE_ID" },
+        { status: 500 }
       );
     }
 
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
-
       payment_method_types: ["card"],
 
       line_items: [
         {
-          price: "price_1TZ0toLT01paCjo3QA5WzzZC",
+          price: process.env.STRIPE_PRICE_ID,
           quantity: 1,
         },
       ],
 
       metadata: {
-        userId,
+        clerkUserId: userId,
       },
 
-      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/?success=true`,
-      cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/?canceled=true`,
+      success_url: "http://localhost:3000/chat?success=true",
+      cancel_url: "http://localhost:3000/chat?canceled=true",
     });
 
-    return NextResponse.json({
+    return Response.json({
       url: session.url,
     });
-  } catch (err) {
-    console.log("Stripe checkout error:", err);
+  } catch (error) {
+    console.log("STRIPE CHECKOUT ERROR:", error);
 
-    return NextResponse.json(
-      { error: "Checkout failed" },
+    return Response.json(
+      { error: "Stripe checkout failed" },
       { status: 500 }
     );
   }
