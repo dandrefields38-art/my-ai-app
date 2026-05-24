@@ -1,11 +1,20 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useUser, UserButton } from "@clerk/nextjs";
+import {
+  MessageSquare,
+  PenSquare,
+} from "lucide-react";
 
 type Chat = {
   id: string;
   title: string;
+};
+
+type SidebarProps = {
+  chats: Chat[];
+  currentChatId: string | null;
+  setCurrentChatId: (id: string) => void;
+  createNewChat: () => void;
 };
 
 export default function Sidebar({
@@ -13,89 +22,66 @@ export default function Sidebar({
   currentChatId,
   setCurrentChatId,
   createNewChat,
-}: {
-  chats: Chat[];
-  currentChatId: string | null;
-  setCurrentChatId: (id: string) => void;
-  createNewChat: () => void;
-}) {
-  const router = useRouter();
-  const { isSignedIn, user } = useUser();
-
-  const handleUpgrade = async () => {
-    if (!isSignedIn) {
-      router.push("/sign-in");
-      return;
-    }
-
-    const res = await fetch("/api/stripe/checkout", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        userId: user?.id,
-      }),
-    });
-
-    const data = await res.json();
-
-    if (data.url) {
-      window.location.href = data.url;
-    } else {
-      alert("Stripe checkout failed");
-    }
-  };
-
+}: SidebarProps) {
   return (
-    <div className="h-screen w-64 border-r bg-gray-100 flex flex-col">
-      <div className="p-4 space-y-2">
+    <aside className="w-[260px] h-screen bg-[#17171c] flex flex-col border-r border-white/[0.03]">
+      {/* TOP */}
+
+      <div className="p-3">
         <button
           onClick={createNewChat}
-          className="w-full bg-black text-white p-3 rounded"
+          className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl hover:bg-white/[0.05] transition text-white/80"
         >
-          + New Chat
-        </button>
+          <PenSquare size={18} />
 
-        <button
-          onClick={handleUpgrade}
-          className="w-full bg-yellow-400 text-black p-3 rounded"
-        >
-          Upgrade to Pro
+          <span className="text-sm">
+            New chat
+          </span>
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-2 space-y-2">
-        {chats?.map((chat) => (
-          <button
-            key={chat.id}
-            onClick={() => setCurrentChatId(chat.id)}
-            className={`w-full text-left p-3 rounded border ${
-              currentChatId === chat.id ? "bg-gray-300" : "bg-white"
-            }`}
-          >
-            {chat.title}
-          </button>
-        ))}
+      {/* CHATS */}
+
+      <div className="flex-1 overflow-y-auto px-2">
+        <div className="space-y-1">
+          {chats.map((chat) => (
+            <button
+              key={chat.id}
+              onClick={() =>
+                setCurrentChatId(chat.id)
+              }
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition text-left ${
+                currentChatId ===
+                chat.id
+                  ? "bg-white/[0.06] text-white"
+                  : "hover:bg-white/[0.04] text-white/60"
+              }`}
+            >
+              <MessageSquare
+                size={16}
+              />
+
+              <span className="truncate text-sm">
+                {chat.title}
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="p-4 border-t">
-        {isSignedIn ? (
-          <div className="flex items-center justify-between">
-            <span className="text-xs truncate max-w-[160px]">
-              {user?.primaryEmailAddress?.emailAddress}
-            </span>
-            <UserButton />
+      {/* FOOTER */}
+
+      <div className="p-3">
+        <div className="rounded-2xl bg-[#202027] px-4 py-4">
+          <div className="text-sm font-medium">
+            Inquire Pro
           </div>
-        ) : (
-          <button
-            onClick={() => router.push("/sign-in")}
-            className="w-full border p-2 rounded bg-white"
-          >
-            Sign In
-          </button>
-        )}
+
+          <div className="text-xs text-white/40 mt-1">
+            Unlimited AI access
+          </div>
+        </div>
       </div>
-    </div>
+    </aside>
   );
 }
