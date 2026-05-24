@@ -21,10 +21,6 @@ import ReactMarkdown from "react-markdown";
 
 import remarkGfm from "remark-gfm";
 
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-
-import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
-
 import { supabase } from "@/lib/supabase";
 
 type Message = {
@@ -60,22 +56,16 @@ export default function ChatPage() {
       null
     );
 
-  // ====================================
   // AUTO SCROLL
-  // ====================================
-
   useEffect(() => {
     bottomRef.current?.scrollIntoView(
       {
         behavior: "smooth",
       }
     );
-  }, [messages]);
+  }, [messages, loading]);
 
-  // ====================================
   // LOAD CHATS
-  // ====================================
-
   useEffect(() => {
     loadChats();
   }, []);
@@ -107,10 +97,7 @@ export default function ChatPage() {
       }
     };
 
-  // ====================================
   // LOAD MESSAGES
-  // ====================================
-
   useEffect(() => {
     if (!chatId) return;
 
@@ -141,19 +128,22 @@ export default function ChatPage() {
         setMessages(
           data.map(
             (m: any) => ({
-              role: m.role,
+              role:
+                m.role ||
+                "assistant",
+
               content:
-                m.content,
+                String(
+                  m.content ||
+                    ""
+                ),
             })
           )
         );
       }
     };
 
-  // ====================================
   // CREATE CHAT
-  // ====================================
-
   const createChat =
     async () => {
       const { data } =
@@ -182,10 +172,7 @@ export default function ChatPage() {
       }
     };
 
-  // ====================================
   // SEND MESSAGE
-  // ====================================
-
   const sendMessage = async () => {
     if (!input.trim()) return;
 
@@ -256,10 +243,11 @@ export default function ChatPage() {
       const data =
         await res.json();
 
-      // FIXED RESPONSE
       const reply =
-        data.reply ||
-        "No response.";
+        String(
+          data.reply ||
+            "No response."
+        );
 
       setMessages([
         ...updatedMessages,
@@ -292,7 +280,10 @@ export default function ChatPage() {
           },
         ]);
     } catch (err) {
-      console.log(err);
+      console.log(
+        "SEND ERROR:",
+        err
+      );
     }
 
     setLoading(false);
@@ -434,16 +425,43 @@ export default function ChatPage() {
                             remarkGfm,
                           ]}
                         >
-                          {
+                          {String(
                             message.content
-                          }
+                          )}
                         </ReactMarkdown>
                       ) : (
-                        message.content
+                        String(
+                          message.content
+                        )
                       )}
                     </div>
                   </motion.div>
                 )
+              )}
+
+              {/* LOADING */}
+              {loading && (
+                <motion.div
+                  initial={{
+                    opacity: 0,
+                    y: 10,
+                  }}
+                  animate={{
+                    opacity: 1,
+                    y: 0,
+                  }}
+                  className="flex justify-start"
+                >
+                  <div className="bg-white/[0.05] border border-white/10 rounded-[28px] px-6 py-5">
+                    <div className="flex gap-2">
+                      <div className="w-2 h-2 rounded-full bg-white/60 animate-bounce" />
+
+                      <div className="w-2 h-2 rounded-full bg-white/60 animate-bounce [animation-delay:0.2s]" />
+
+                      <div className="w-2 h-2 rounded-full bg-white/60 animate-bounce [animation-delay:0.4s]" />
+                    </div>
+                  </div>
+                </motion.div>
               )}
 
               <div ref={bottomRef} />

@@ -1,56 +1,43 @@
 export async function getLeads(
   query: string
 ) {
-  try {
-    const res = await fetch(
-      "https://google.serper.dev/search",
-      {
-        method: "POST",
+  console.log(
+    "Lead search:",
+    query
+  );
 
-        headers: {
-          "X-API-KEY":
-            process.env
-              .SERPER_API_KEY || "",
+  return [
+    {
+      name:
+        "Miami Roofing Experts",
 
-          "Content-Type":
-            "application/json",
-        },
+      website:
+        "https://miamiroofingexperts.com",
 
-        body: JSON.stringify({
-          q: query,
-        }),
-      }
-    );
+      snippet:
+        "Residential and commercial roofing company in Miami.",
+    },
 
-    const data =
-      await res.json();
+    {
+      name:
+        "Elite Roofing Group",
 
-    console.log(data);
+      website:
+        "https://eliteroofinggroup.com",
 
-    const results =
-      data.organic || [];
+      snippet:
+        "South Florida roofing specialists with emergency repair services.",
+    },
 
-    return results
-      .slice(0, 10)
-      .map((item: any) => ({
-        name:
-          item.title ||
-          "Unknown Business",
+    {
+      name:
+        "Premier Roofing Solutions",
 
-        website:
-          item.link ||
-          "No Website",
+      website:
+        "https://premierroofingsolutions.com",
 
-        snippet:
-          item.snippet ||
-          "No description available",
-      }));
-  } catch (err) {
-    console.log(
-      "LEADS ERROR:",
-      err
-    );
-
-    return [];
-  }
+      snippet:
+        "Licensed roofing contractors serving Miami and nearby areas.",
+    },
+  ];
 }

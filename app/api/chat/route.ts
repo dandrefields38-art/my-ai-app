@@ -146,17 +146,16 @@ export async function POST(req: Request) {
             Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
           },
 
-          body: JSON.stringify(
-            {
-              model:
-                "gpt-4o-mini",
+          body: JSON.stringify({
+            model:
+              "gpt-4o-mini",
 
-              messages: [
-                {
-                  role:
-                    "system",
+            messages: [
+              {
+                role:
+                  "system",
 
-                  content: `
+                content: `
 You are Inquire AI.
 
 You are smart, futuristic, conversational, modern, and helpful.
@@ -173,29 +172,28 @@ You help users with:
 
 Always sound human.
 Never sound robotic.
-                  `,
-                },
+                `,
+              },
 
-                ...(messages || []).map(
-                  (m: any) => ({
-                    role:
-                      m.role,
-
-                    content:
-                      m.content,
-                  })
-                ),
-
-                {
+              ...(messages || []).map(
+                (m: any) => ({
                   role:
-                    "user",
+                    m.role,
 
                   content:
-                    message,
-                },
-              ],
-            }
-          ),
+                    m.content,
+                })
+              ),
+
+              {
+                role:
+                  "user",
+
+                content:
+                  message,
+              },
+            ],
+          }),
         }
       );
 
