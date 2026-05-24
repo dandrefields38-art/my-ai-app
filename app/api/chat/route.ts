@@ -1,466 +1,224 @@
-import OpenAI from "openai";
-import axios from "axios";
-
-import { createClient } from "@supabase/supabase-js";
-import { auth } from "@clerk/nextjs/server";
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-const FREE_LIMIT = 25;
+import { getJobs } from "@/lib/jobs";
+import { getLeads } from "@/lib/leads";
 
 export async function POST(req: Request) {
   try {
-    const { userId } = await auth();
+    const { message, messages } =
+      await req.json();
 
-    if (!userId) {
-      return new Response(
-        "Unauthorized",
-        {
-          status: 401,
-        }
-      );
+    if (!message) {
+      return Response.json({
+        reply:
+          "No message provided.",
+      });
     }
 
-    const {
-      chatId,
-      message,
-      image,
-      documentText,
-    } = await req.json();
+    const text =
+      message.toLowerCase();
 
-    // =====================
-    // PROFILE
-    // =====================
-
-    let { data: profile } =
-      await supabase
-        .from("profiles")
-        .select("*")
-        .eq(
-          "clerk_user_id",
-          userId
-        )
-        .single();
-
-    if (!profile) {
-      const { data } =
-        await supabase
-          .from("profiles")
-          .insert([
-            {
-              clerk_user_id:
-                userId,
-
-              is_pro: false,
-
-              message_count: 0,
-            },
-          ])
-          .select()
-          .single();
-
-      profile = data;
-    }
-
-    // =====================
-    // LIMITS
-    // =====================
-
-    if (
-      !profile.is_pro &&
-      profile.message_count >=
-        FREE_LIMIT
-    ) {
-      return new Response(
-        "Free limit reached. Upgrade to Pro.",
-        {
-          status: 403,
-        }
-      );
-    }
-
-    await supabase
-      .from("profiles")
-      .update({
-        message_count:
-          (profile.message_count ||
-            0) + 1,
-      })
-      .eq(
-        "clerk_user_id",
-        userId
-      );
-
-    // =====================
-    // DOCUMENT SUPPORT
-    // =====================
-
-    const finalMessage =
-      documentText
-        ? `${
-            message ||
-            "Analyze this document."
-          }
-
-DOCUMENT CONTENT:
-${documentText.slice(
-  0,
-  15000
-)}`
-        : message;
-
-    // =====================
-    // MEMORY
-    // =====================
-
-    const {
-      data: previousMessages,
-    } = await supabase
-      .from("messages")
-      .select("*")
-      .eq("chat_id", chatId)
-      .order("created_at", {
-        ascending: true,
-      })
-      .limit(20);
-
-    const history =
-      previousMessages?.map(
-        (msg: any) => ({
-          role:
-            msg.role ===
-            "assistant"
-              ? "assistant"
-              : "user",
-
-          content:
-            msg.content,
-        })
-      ) || [];
-
-    // =====================
-    // TOOL DETECTION
-    // =====================
-
-    const lower =
-      finalMessage.toLowerCase();
+    // =====================================
+    // LEADS
+    // =====================================
 
     const isLeadRequest =
-      lower.includes("lead") ||
-      lower.includes(
-        "businesses"
+      text.includes("lead") ||
+      text.includes("leads") ||
+      text.includes(
+        "roofing companies"
       ) ||
-      lower.includes(
-        "companies"
+      text.includes(
+        "find companies"
       ) ||
-      lower.includes(
-        "prospects"
+      text.includes(
+        "find businesses"
+      ) ||
+      text.includes(
+        "business owners"
       );
-
-    const isJobRequest =
-      lower.includes("job") ||
-      lower.includes("hiring") ||
-      lower.includes("career") ||
-      lower.includes(
-        "work from home"
-      ) ||
-      lower.includes(
-        "remote"
-      );
-
-    // =====================
-    // LEADS TOOL
-    // =====================
 
     if (isLeadRequest) {
-      try {
-        const businessMatch =
-          finalMessage.match(
-            /(roofing|trucking|restaurants|salons|real estate|brokerages|construction|medical|law firms|auto shops|dentists|marketing agencies|gyms)/i
-          );
+      const leads =
+        await getLeads(message);
 
-        const locationMatch =
-          finalMessage.match(
-            /in ([a-zA-Z\s]+)/i
-          );
+      if (!leads.length) {
+        return Response.json({
+          reply:
+            "No leads found.",
+        });
+      }
 
-        const business =
-          businessMatch?.[0] ||
-          "businesses";
-
-        const location =
-          locationMatch?.[1] ||
-          "New York";
-
-        const leadsResponse =
-          await axios.post(
-            `${process.env.NEXT_PUBLIC_APP_URL}/api/leads`,
-            {
-              query:
-                business,
-
-              location,
-            }
-          );
-
-        const leads =
-          leadsResponse.data
-            .leads || [];
-
-        // =====================
-        // AUTO SAVE LEADS
-        // =====================
-
-        try {
-          await axios.post(
-            `${process.env.NEXT_PUBLIC_APP_URL}/api/save-leads`,
-            {
-              leads: leads.map(
-                (lead: any) => ({
-                  ...lead,
-
-                  industry:
-                    business,
-                })
-              ),
-            }
-          );
-        } catch (saveErr) {
-          console.log(
-            "AUTO SAVE ERROR:",
-            saveErr
-          );
-        }
-
-        let formatted =
-          `Here are some ${business} leads in ${location}:\n\n`;
-
+      const formatted =
         leads
-          .slice(0, 10)
-          .forEach(
+          .map(
             (
               lead: any,
               index: number
-            ) => {
-              formatted += `${index + 1}. ${lead.name}
+            ) => `
+━━━━━━━━━━━━━━━━━━━
 
-Address: ${lead.address}
+#${index + 1}
 
-Rating: ${lead.rating}
+🏢 ${lead.name}
 
-Status: ${lead.business_status}
+🌐 ${lead.website}
 
-`;
-            }
-          );
+📝 ${lead.snippet}
 
-        formatted += `
-These leads have been automatically saved into your CRM.
+━━━━━━━━━━━━━━━━━━━
+`
+          )
+          .join("\n");
 
-Next things I can help with:
-- generate cold call scripts
-- write outreach emails
-- build SMS campaigns
-- organize leads
-- score lead quality
-- create follow-up plans
-`;
-
-        return new Response(
-          formatted
-        );
-      } catch (err) {
-        console.log(
-          "LEADS TOOL ERROR:",
-          err
-        );
-      }
+      return Response.json({
+        reply: formatted,
+      });
     }
 
-    // =====================
-    // JOB TOOL
-    // =====================
+    // =====================================
+    // JOBS
+    // =====================================
+
+    const isJobRequest =
+      text.includes("job") ||
+      text.includes("jobs") ||
+      text.includes(
+        "remote jobs"
+      ) ||
+      text.includes(
+        "hiring"
+      );
 
     if (isJobRequest) {
-      try {
-        const roleMatch =
-          finalMessage.match(
-            /(software engineer|sales|marketing|project manager|healthcare|customer service|it support|developer|designer|sdr|account executive|admin|assistant)/i
-          );
+      const jobs =
+        await getJobs(message);
 
-        const locationMatch =
-          finalMessage.match(
-            /in ([a-zA-Z\s]+)/i
-          );
-
-        const role =
-          roleMatch?.[0] ||
-          "Software Engineer";
-
-        const location =
-          locationMatch?.[1] ||
-          "New York";
-
-        const jobsResponse =
-          await axios.post(
-            `${process.env.NEXT_PUBLIC_APP_URL}/api/jobs`,
-            {
-              query: role,
-
-              location,
-            }
-          );
-
-        const jobs =
-          jobsResponse.data.jobs ||
-          [];
-
-        let formatted =
-          `Here are some ${role} jobs in ${location}:\n\n`;
-
-        jobs.forEach(
-          (
-            job: any,
-            index: number
-          ) => {
-            formatted += `${index + 1}. ${job.title}
-
-Company: ${job.company}
-
-Location: ${job.location}
-
-Salary: ${job.salary}
-
-Apply: ${job.redirect_url}
-
-`;
-          }
-        );
-
-        return new Response(
-          formatted
-        );
-      } catch (err) {
-        console.log(
-          "JOB TOOL ERROR:",
-          err
-        );
+      if (!jobs.length) {
+        return Response.json({
+          reply:
+            "No jobs found.",
+        });
       }
+
+      const formattedJobs =
+        jobs
+          .map(
+            (
+              job: any,
+              index: number
+            ) => `
+━━━━━━━━━━━━━━━━━━━
+
+#${index + 1}
+
+💼 ${job.title}
+
+🏢 ${job.company}
+
+📍 ${job.location}
+
+🔗 ${job.url}
+
+━━━━━━━━━━━━━━━━━━━
+`
+          )
+          .join("\n");
+
+      return Response.json({
+        reply:
+          formattedJobs,
+      });
     }
 
-    // =====================
-    // IMAGE SUPPORT
-    // =====================
+    // =====================================
+    // NORMAL AI CHAT
+    // =====================================
 
-    const userContent =
-      image
-        ? [
+    const aiResponse =
+      await fetch(
+        "https://api.openai.com/v1/chat/completions",
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json",
+
+            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          },
+
+          body: JSON.stringify(
             {
-              type:
-                "text" as const,
+              model:
+                "gpt-4o-mini",
 
-              text:
-                finalMessage ||
-                "Analyze this image.",
-            },
+              messages: [
+                {
+                  role:
+                    "system",
 
-            {
-              type:
-                "image_url" as const,
+                  content: `
+You are Inquire AI.
 
-              image_url: {
-                url: image,
-              },
-            },
-          ]
-        : finalMessage;
+You are smart, futuristic, conversational, modern, and helpful.
 
-    // =====================
-    // NORMAL AI
-    // =====================
+You help users with:
+- coding
+- business
+- startups
+- jobs
+- lead generation
+- life advice
+- productivity
+- casual conversations
 
-    const response =
-      await openai.responses.create({
-        model: "gpt-4.1-mini",
+Always sound human.
+Never sound robotic.
+                  `,
+                },
 
-        tools: [
-          {
-            type:
-              "web_search_preview",
-          },
-        ],
+                ...(messages || []).map(
+                  (m: any) => ({
+                    role:
+                      m.role,
 
-        input: [
-          {
-            role: "system",
+                    content:
+                      m.content,
+                  })
+                ),
 
-            content:
-              "You are Inquire, an advanced AI operating system and assistant. You help users with business, jobs, lead generation, automation, research, writing, coding, productivity, images, documents, and life organization. You intelligently route tasks to tools and maintain memory of the conversation.",
-          },
+                {
+                  role:
+                    "user",
 
-          ...history,
-
-          {
-            role: "user",
-
-            content:
-              userContent,
-          },
-        ],
-
-        stream: true,
-      });
-
-    // =====================
-    // STREAM
-    // =====================
-
-    const encoder =
-      new TextEncoder();
-
-    const stream =
-      new ReadableStream({
-        async start(
-          controller
-        ) {
-          for await (const event of response) {
-            if (
-              event.type ===
-              "response.output_text.delta"
-            ) {
-              controller.enqueue(
-                encoder.encode(
-                  event.delta
-                )
-              );
+                  content:
+                    message,
+                },
+              ],
             }
-          }
+          ),
+        }
+      );
 
-          controller.close();
-        },
-      });
+    const data =
+      await aiResponse.json();
 
-    return new Response(
-      stream
-    );
-  } catch (error) {
+    const reply =
+      data?.choices?.[0]
+        ?.message?.content ||
+      "Sorry, I couldn't respond.";
+
+    return Response.json({
+      reply,
+    });
+  } catch (err) {
     console.log(
-      "CHAT API ERROR:",
-      error
+      "Chat API Error:",
+      err
     );
 
-    return new Response(
-      "Server error",
-      {
-        status: 500,
-      }
-    );
+    return Response.json({
+      reply:
+        "Server error.",
+    });
   }
 }
