@@ -119,12 +119,55 @@ export default function Sidebar({
             key={chat.id}
             className="flex items-center justify-between bg-white/5 hover:bg-white/10 rounded-lg px-3 py-2"
           >
-            <button
-              onClick={() => setChatId(chat.id)}
-              className="text-sm text-left flex-1 truncate"
-            >
-              {chat.title || "Untitled Chat"}
-            </button>
+            <div className="flex items-center justify-between w-full gap-2">
+
+  <button
+    onClick={() =>
+      setChatId(
+        chat.id
+      )
+    }
+    className="flex-1 text-sm text-left truncate"
+  >
+
+    <span
+  onDoubleClick={async () => {
+
+    const newTitle =
+      prompt(
+        "Rename chat"
+      );
+
+    if (
+      !newTitle
+    )
+      return;
+
+    await supabase
+      .from("chats")
+      .update({
+        title:
+          newTitle,
+      })
+      .eq(
+        "id",
+        chat.id
+      );
+
+    window.location.reload();
+  }}
+  className="cursor-pointer"
+>
+
+  {chat.title || "Untitled"}
+
+</span>
+
+  </button>
+
+  
+
+</div>
 
             <button
               onClick={() => deleteChat(chat.id)}

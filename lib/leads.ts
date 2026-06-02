@@ -1,43 +1,79 @@
-export async function getLeads(
-  query: string
-) {
-  console.log(
-    "Lead search:",
-    query
-  );
+export async function getLeads(query: string) {
+  try {
+    const cleanedQuery = query
+      .replace(/find/gi, "")
+      .replace(/leads?/gi, "")
+      .replace(/lead generation/gi, "")
+      .replace(/prospects?/gi, "")
+      .replace(/business owners?/gi, "businesses")
+      .replace(/company owners?/gi, "companies")
+      .trim();
 
-  return [
-    {
-      name:
-        "Miami Roofing Experts",
+    const searchQuery = `${cleanedQuery} official company website contact`;
 
-      website:
-        "https://miamiroofingexperts.com",
+    const response = await fetch("https://google.serper.dev/search", {
+      method: "POST",
+      headers: {
+        "X-API-KEY": process.env.SERPER_API_KEY || "",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        q: searchQuery,
+      }),
+    });
 
-      snippet:
-        "Residential and commercial roofing company in Miami.",
-    },
+    const data = await response.json();
 
-    {
-      name:
-        "Elite Roofing Group",
+    if (!response.ok) {
+      console.log("Serper error:", data);
+      return [];
+    }
 
-      website:
-        "https://eliteroofinggroup.com",
+    const organic = data.organic || [];
 
-      snippet:
-        "South Florida roofing specialists with emergency repair services.",
-    },
+    const blocked = [
+      "yelp",
+      "facebook",
+      "instagram",
+      "linkedin",
+      "reddit",
+      "youtube",
+      "wikipedia",
+      "homeadvisor",
+      "angi",
+      "thumbtack",
+      "semrush",
+      "iambuilders",
+      "constructionwire",
+      "planhub",
+      "activeprospect",
+      "lead generation",
+      "best",
+      "blog",
+      "article",
+      "directory",
+    ];
 
-    {
-      name:
-        "Premier Roofing Solutions",
+    const filtered = organic.filter((item: any) => {
+      const url = String(item.link || "").toLowerCase();
+      const title = String(item.title || "").toLowerCase();
+      const snippet = String(item.snippet || "").toLowerCase();
 
-      website:
-        "https://premierroofingsolutions.com",
+      return !blocked.some(
+        (word) =>
+          url.includes(word) || title.includes(word) || snippet.includes(word)
+      );
+    });
 
-      snippet:
-        "Licensed roofing contractors serving Miami and nearby areas.",
-    },
-  ];
+    const finalResults = filtered.length ? filtered : organic;
+
+    return finalResults.slice(0, 8).map((item: any) => ({
+      name: item.title || "Unknown Company",
+      website: item.link || "",
+      snippet: item.snippet || "No description.",
+    }));
+  } catch (err) {
+    console.log("LEADS ERROR:", err);
+    return [];
+  }
 }

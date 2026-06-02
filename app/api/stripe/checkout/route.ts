@@ -1,50 +1,114 @@
 import Stripe from "stripe";
-import { NextResponse } from "next/server";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2024-06-20",
-});
+const stripe =
+  new Stripe(
+    process.env
+      .STRIPE_SECRET_KEY!,
+    {
+      apiVersion:
+        "2025-08-27.basil" as any,
+    }
+  );
 
-export async function POST(req: Request) {
+export async function POST(
+  req: Request
+) {
+
   try {
-    const { userId } = await req.json();
+    let body:
+      | {
+          userId?: string;
+        }
+      | null =
+      null;
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: "Missing userId" },
-        { status: 400 }
+    try {
+      body =
+        await req.json();
+    } catch {
+      body =
+        null;
+    }
+
+    const appUrl =
+      (
+        process.env
+          .NEXT_PUBLIC_APP_URL ||
+        new URL(req.url).origin
+      ).replace(
+        /\/$/,
+        ""
+      );
+
+    const session =
+      await stripe.checkout.sessions.create(
+        {
+          payment_method_types:
+            ["card"],
+
+          mode:
+            "subscription",
+
+          line_items: [
+            {
+              price:
+                process.env
+                  .STRIPE_PRICE_ID!,
+
+              quantity:
+                1,
+            },
+          ],
+
+          metadata:
+            body?.userId
+              ? {
+                  userId:
+                    body.userId,
+                }
+              : undefined,
+
+          success_url:
+            `${appUrl}/chat?checkout=success`,
+
+          cancel_url:
+            `${appUrl}/chat?checkout=canceled`,
+        }
+      );
+
+    if (!session.url) {
+      return Response.json(
+        {
+          error:
+            "Stripe did not return a checkout URL.",
+        },
+        {
+          status: 500,
+        }
       );
     }
 
-    const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
+    return Response.json({
+      url:
+        session.url,
+    });
 
-      payment_method_types: ["card"],
+  } catch (
+    err
+  ) {
 
-      line_items: [
-        {
-          price: "price_1TZ0toLT01paCjo3QA5WzzZC",
-          quantity: 1,
-        },
-      ],
+    console.log(
+      err
+    );
 
-      metadata: {
-        userId,
+    return Response.json(
+      {
+        error:
+          "Checkout error",
       },
-
-      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/?success=true`,
-      cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/?canceled=true`,
-    });
-
-    return NextResponse.json({
-      url: session.url,
-    });
-  } catch (err) {
-    console.log("Stripe checkout error:", err);
-
-    return NextResponse.json(
-      { error: "Checkout failed" },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }
