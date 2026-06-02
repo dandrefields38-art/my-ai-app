@@ -1,9 +1,11 @@
 import OpenAI from "openai";
 import { checkUsageLimit } from "@/lib/usageLimits";
+import { requiredEnv } from "@/lib/env";
+import { requireApiAuth } from "@/lib/security";
 
 const openai = new OpenAI({
   apiKey:
-    process.env.OPENAI_API_KEY!,
+    requiredEnv.openaiApiKey(),
 });
 
 export async function POST(
@@ -15,6 +17,40 @@ export async function POST(
       userId,
     } =
       await req.json();
+
+    const requestedUserId =
+      userId
+        ? String(
+            userId
+          )
+        : null;
+
+    const auth =
+      await requireApiAuth(
+        req,
+        {
+          userId:
+            requestedUserId,
+          rateLimit: {
+            key:
+              "images",
+            limit:
+              20,
+            windowMs:
+              60 * 1000,
+          },
+        }
+      );
+
+    if (
+      auth.response
+    ) {
+      return auth.response;
+    }
+
+    const effectiveUserId =
+      auth.user?.id ||
+      requestedUserId;
 
     if (!prompt) {
       return Response.json(
@@ -30,7 +66,7 @@ export async function POST(
 
     const usage =
       await checkUsageLimit(
-        userId,
+        effectiveUserId,
         "images"
       );
 

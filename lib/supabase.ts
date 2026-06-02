@@ -1,12 +1,13 @@
 import { createClient } from "@supabase/supabase-js";
+import { requiredEnv } from "@/lib/env";
 
 export const supabase =
   createClient(
-    process.env
-      .NEXT_PUBLIC_SUPABASE_URL!,
+    requiredEnv
+      .supabaseUrl(),
 
-    process.env
-      .NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    requiredEnv
+      .supabaseAnonKey(),
 
     {
       auth: {

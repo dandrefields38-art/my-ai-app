@@ -1,5 +1,27 @@
+import { requiredEnv } from "@/lib/env";
+import { requireApiAuth } from "@/lib/security";
+
 export async function POST(req: Request) {
   try {
+    const auth =
+      await requireApiAuth(
+        req,
+        {
+          rateLimit: {
+            key:
+              "apollo-contacts",
+            limit:
+              30,
+            windowMs:
+              60 * 1000,
+          },
+        }
+      );
+
+    if (auth.response) {
+      return auth.response;
+    }
+
     const { domain } = await req.json();
 
     if (!domain) {
@@ -16,7 +38,8 @@ export async function POST(req: Request) {
         headers: {
           "Content-Type": "application/json",
           "Cache-Control": "no-cache",
-          "X-Api-Key": process.env.APOLLO_API_KEY!,
+          "X-Api-Key":
+            requiredEnv.apolloApiKey(),
         },
         body: JSON.stringify({
           q_organization_domains: domain,

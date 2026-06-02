@@ -6,6 +6,7 @@ import { getLiveScores } from "@/lib/sports";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { checkUsageLimit } from "@/lib/usageLimits";
 import { extractPdfTextFromDataUrl } from "@/lib/pdfText";
+import { requireApiAuth } from "@/lib/security";
 
 import { streamText } from "ai";
 
@@ -90,6 +91,40 @@ export async function POST(
 		      pdf,
 		    } = await req.json();
 
+    const requestedUserId =
+      userId
+        ? String(
+            userId
+          )
+        : null;
+
+    const auth =
+      await requireApiAuth(
+        req,
+        {
+          userId:
+            requestedUserId,
+          rateLimit: {
+            key:
+              "chat",
+            limit:
+              80,
+            windowMs:
+              60 * 1000,
+          },
+        }
+      );
+
+    if (
+      auth.response
+    ) {
+      return auth.response;
+    }
+
+    const effectiveUserId =
+      auth.user?.id ||
+      requestedUserId;
+
 	    const attachedImage =
 	      image?.dataUrl &&
 	      image?.mediaType
@@ -153,7 +188,7 @@ export async function POST(
 
 	    const usage =
 	      await checkUsageLimit(
-	        userId,
+	        effectiveUserId,
 	        "messages"
 	      );
 
@@ -171,7 +206,7 @@ export async function POST(
 		    if (attachedImage) {
 	      const imageUsage =
 	        await checkUsageLimit(
-	          userId,
+	          effectiveUserId,
 	          "images"
 	        );
 
@@ -192,7 +227,7 @@ export async function POST(
 	    if (attachedPdf) {
 	      const pdfUsage =
 	        await checkUsageLimit(
-	          userId,
+	          effectiveUserId,
 	          "pdfs"
 	        );
 
@@ -233,7 +268,7 @@ export async function POST(
     // MEMORY SAVE
     // =====================
 
-    if (userId) {
+    if (effectiveUserId) {
 
       const rememberMatch =
         messageText.match(
@@ -261,7 +296,7 @@ export async function POST(
           )
           .insert({
             user_id:
-              userId,
+              effectiveUserId,
 
             content:
               memoryText.slice(
@@ -491,7 +526,7 @@ ${String(
       "";
 
     if (
-      userId
+      effectiveUserId
     ) {
 
       const {
@@ -506,7 +541,7 @@ ${String(
           )
           .eq(
             "user_id",
-            userId
+            effectiveUserId
           )
           .order(
             "created_at",

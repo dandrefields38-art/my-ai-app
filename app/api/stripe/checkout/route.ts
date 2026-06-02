@@ -1,9 +1,11 @@
 import Stripe from "stripe";
+import { requiredEnv } from "@/lib/env";
+import { requireApiAuth } from "@/lib/security";
 
 const stripe =
   new Stripe(
-    process.env
-      .STRIPE_SECRET_KEY!,
+    requiredEnv
+      .stripeSecretKey(),
     {
       apiVersion:
         "2025-08-27.basil" as any,
@@ -30,6 +32,34 @@ export async function POST(
         null;
     }
 
+    const auth =
+      await requireApiAuth(
+        req,
+        {
+          userId:
+            body?.userId ||
+            null,
+          rateLimit: {
+            key:
+              "checkout",
+            limit:
+              10,
+            windowMs:
+              10 * 60 * 1000,
+          },
+        }
+      );
+
+    if (
+      auth.response
+    ) {
+      return auth.response;
+    }
+
+    const checkoutUserId =
+      body?.userId ||
+      auth.user?.id;
+
     const appUrl =
       (
         process.env
@@ -52,8 +82,8 @@ export async function POST(
           line_items: [
             {
               price:
-                process.env
-                  .STRIPE_PRICE_ID!,
+                requiredEnv
+                  .stripePriceId(),
 
               quantity:
                 1,
@@ -61,10 +91,10 @@ export async function POST(
           ],
 
           metadata:
-            body?.userId
+            checkoutUserId
               ? {
                   userId:
-                    body.userId,
+                    checkoutUserId,
                 }
               : undefined,
 

@@ -1,12 +1,33 @@
 import { createClient } from "@supabase/supabase-js";
+import { requiredEnv } from "@/lib/env";
+import { requireApiAuth } from "@/lib/security";
 
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  requiredEnv.supabaseUrl(),
+  requiredEnv.supabaseServiceRoleKey()
 );
 
 export async function POST(req: Request) {
   try {
+    const auth =
+      await requireApiAuth(
+        req,
+        {
+          rateLimit: {
+            key:
+              "save-leads",
+            limit:
+              30,
+            windowMs:
+              60 * 1000,
+          },
+        }
+      );
+
+    if (auth.response) {
+      return auth.response;
+    }
+
     const { leads } =
       await req.json();
 
@@ -85,7 +106,7 @@ export async function POST(req: Request) {
       return Response.json(
         {
           error:
-            error.message,
+            "Failed to save leads",
         },
         {
           status: 500,

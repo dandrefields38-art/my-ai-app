@@ -1,5 +1,6 @@
 import { extractPdfTextFromBuffer } from "@/lib/pdfText";
 import { checkUsageLimit } from "@/lib/usageLimits";
+import { requireApiAuth } from "@/lib/security";
 
 export async function POST(
   req: Request
@@ -24,6 +25,33 @@ export async function POST(
           ""
       );
 
+    const auth =
+      await requireApiAuth(
+        req,
+        {
+          userId:
+            userId || null,
+          rateLimit: {
+            key:
+              "resume",
+            limit:
+              20,
+            windowMs:
+              60 * 1000,
+          },
+        }
+      );
+
+    if (
+      auth.response
+    ) {
+      return auth.response;
+    }
+
+    const effectiveUserId =
+      auth.user?.id ||
+      userId;
+
     if (!file) {
       return Response.json(
         {
@@ -38,7 +66,7 @@ export async function POST(
 
     const usage =
       await checkUsageLimit(
-        userId,
+        effectiveUserId,
         "pdfs"
       );
 

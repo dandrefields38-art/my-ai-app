@@ -1,24 +1,64 @@
 import { createClient } from "@supabase/supabase-js";
+import { requiredEnv } from "@/lib/env";
+import { requireApiAuth } from "@/lib/security";
 
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  requiredEnv.supabaseUrl(),
+  requiredEnv.supabaseServiceRoleKey()
 );
 
-export async function GET() {
+export async function GET(req: Request) {
+  const auth =
+    await requireApiAuth(
+      req,
+      {
+        rateLimit: {
+          key:
+            "saved-jobs-get",
+          limit:
+            60,
+          windowMs:
+            60 * 1000,
+        },
+      }
+    );
+
+  if (auth.response) {
+    return auth.response;
+  }
+
   const { data, error } = await supabase
     .from("saved_jobs")
     .select("*")
     .order("created_at", { ascending: false });
 
   if (error) {
-    return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ error: "Failed to load saved jobs" }, { status: 500 });
   }
 
   return Response.json({ jobs: data });
 }
 
 export async function POST(req: Request) {
+  const auth =
+    await requireApiAuth(
+      req,
+      {
+        rateLimit: {
+          key:
+            "saved-jobs-post",
+          limit:
+            60,
+          windowMs:
+            60 * 1000,
+        },
+      }
+    );
+
+  if (auth.response) {
+    return auth.response;
+  }
+
   const job = await req.json();
 
   const { error } = await supabase.from("saved_jobs").insert([
@@ -33,13 +73,32 @@ export async function POST(req: Request) {
   ]);
 
   if (error) {
-    return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ error: "Failed to save job" }, { status: 500 });
   }
 
   return Response.json({ success: true });
 }
 
 export async function PATCH(req: Request) {
+  const auth =
+    await requireApiAuth(
+      req,
+      {
+        rateLimit: {
+          key:
+            "saved-jobs-patch",
+          limit:
+            60,
+          windowMs:
+            60 * 1000,
+        },
+      }
+    );
+
+  if (auth.response) {
+    return auth.response;
+  }
+
   const { id, status } = await req.json();
 
   const { error } = await supabase
@@ -48,7 +107,7 @@ export async function PATCH(req: Request) {
     .eq("id", id);
 
   if (error) {
-    return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ error: "Failed to update job" }, { status: 500 });
   }
 
   return Response.json({ success: true });

@@ -950,6 +950,25 @@ export default function ChatPage() {
 	        "/login";
 	    };
 
+  const getAuthHeaders =
+    async (): Promise<
+      Record<string, string>
+    > => {
+      const {
+        data: {
+          session,
+        },
+      } =
+        await supabase.auth.getSession();
+
+      return session?.access_token
+        ? {
+            Authorization:
+              `Bearer ${session.access_token}`,
+          }
+        : {};
+    };
+
   const handleFileChange =
     (
       event: ChangeEvent<HTMLInputElement>
@@ -1281,6 +1300,8 @@ export default function ChatPage() {
 	  
 	      }
       try {
+        const authHeaders =
+          await getAuthHeaders();
 
         // IMAGE MODE
 
@@ -1299,6 +1320,7 @@ export default function ChatPage() {
                   {
                     "Content-Type":
                       "application/json",
+                    ...authHeaders,
                   },
 
                 body:
@@ -1357,6 +1379,7 @@ export default function ChatPage() {
                 {
                   "Content-Type":
                     "application/json",
+                  ...authHeaders,
                 },
 
 	              body:
@@ -1605,6 +1628,8 @@ export default function ChatPage() {
             </button>
             <button
   onClick={async () => {
+    const authHeaders =
+      await getAuthHeaders();
 
     const res =
       await fetch(
@@ -1616,6 +1641,7 @@ export default function ChatPage() {
           headers: {
             "Content-Type":
               "application/json",
+            ...authHeaders,
           },
 
           body:

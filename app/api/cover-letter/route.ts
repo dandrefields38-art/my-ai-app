@@ -1,11 +1,33 @@
 import OpenAI from "openai";
+import { requiredEnv } from "@/lib/env";
+import { requireApiAuth } from "@/lib/security";
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey:
+    requiredEnv.openaiApiKey(),
 });
 
 export async function POST(req: Request) {
   try {
+    const auth =
+      await requireApiAuth(
+        req,
+        {
+          rateLimit: {
+            key:
+              "cover-letter",
+            limit:
+              20,
+            windowMs:
+              60 * 1000,
+          },
+        }
+      );
+
+    if (auth.response) {
+      return auth.response;
+    }
+
     const {
       resume,
       jobTitle,
