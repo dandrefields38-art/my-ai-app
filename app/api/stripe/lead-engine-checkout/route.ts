@@ -39,6 +39,7 @@ export async function POST(
       auth.user!.id;
     const appUrl =
       (
+        process.env.APP_URL ||
         process.env
           .NEXT_PUBLIC_APP_URL ||
         new URL(req.url).origin
