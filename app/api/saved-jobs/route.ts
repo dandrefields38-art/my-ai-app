@@ -27,9 +27,13 @@ export async function GET(req: Request) {
     return auth.response;
   }
 
+  const userId =
+    auth.user!.id;
+
   const { data, error } = await supabase
     .from("saved_jobs")
     .select("*")
+    .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -59,10 +63,14 @@ export async function POST(req: Request) {
     return auth.response;
   }
 
+  const userId =
+    auth.user!.id;
+
   const job = await req.json();
 
   const { error } = await supabase.from("saved_jobs").insert([
     {
+      user_id: userId,
       title: job.title,
       company: job.company,
       location: job.location,
@@ -99,12 +107,16 @@ export async function PATCH(req: Request) {
     return auth.response;
   }
 
+  const userId =
+    auth.user!.id;
+
   const { id, status } = await req.json();
 
   const { error } = await supabase
     .from("saved_jobs")
     .update({ status })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("user_id", userId);
 
   if (error) {
     return Response.json({ error: "Failed to update job" }, { status: 500 });

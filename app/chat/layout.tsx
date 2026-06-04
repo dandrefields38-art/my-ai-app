@@ -2,14 +2,13 @@
 
 import {
   useEffect,
-  useState,
 } from "react";
 
 import {
   useRouter,
 } from "next/navigation";
 
-import { supabase } from "@/lib/supabase";
+import { redirectIfSignedOut } from "@/lib/authClient";
 
 export default function ChatLayout({
   children,
@@ -19,36 +18,11 @@ export default function ChatLayout({
   const router =
     useRouter();
 
-  const [loading, setLoading] =
-    useState(true);
-
   useEffect(() => {
-    checkUser();
-  }, []);
-
-  const checkUser =
-    async () => {
-      const {
-        data: { session },
-      } =
-        await supabase.auth.getSession();
-
-      if (!session) {
-        router.push(
-          "/login"
-        );
-      } else {
-        setLoading(false);
-      }
-    };
-
-  if (loading) {
-    return (
-      <main className="h-screen bg-black text-white flex items-center justify-center">
-        Loading...
-      </main>
+    void redirectIfSignedOut(
+      router
     );
-  }
+  }, [router]);
 
-  return children;
+  return <>{children}</>;
 }

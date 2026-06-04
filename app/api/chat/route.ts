@@ -1,5 +1,4 @@
 import { getJobs } from "@/lib/jobs";
-import { getLeads } from "@/lib/leads";
 import { webSearch } from "@/lib/search";
 import { getLiveScores } from "@/lib/sports";
 
@@ -11,6 +10,101 @@ import { requireApiAuth } from "@/lib/security";
 import { streamText } from "ai";
 
 import { openai } from "@ai-sdk/openai";
+
+type ChatMode =
+  | "job_search"
+  | "sports"
+  | "web_search"
+  | "file_missing"
+  | "normal";
+
+const getCurrentDateContext = () => {
+  const now =
+    new Date();
+
+  return {
+    iso:
+      now.toISOString(),
+    eastern:
+      new Intl.DateTimeFormat(
+        "en-US",
+        {
+          dateStyle:
+            "full",
+          timeStyle:
+            "long",
+          timeZone:
+            "America/New_York",
+        }
+      ).format(now),
+  };
+};
+
+const wantsAttachedFileTask = (
+  text: string
+) =>
+  /\b(analyze|summarize|review|read|extract|rewrite|improve|edit|convert|make|create)\b/i.test(
+    text
+  ) &&
+  /\b(file|pdf|document|doc|resume|image|photo|screenshot|attachment|uploaded|spreadsheet|slide|deck)\b/i.test(
+    text
+  );
+
+const wantsJobSearch = (
+  text: string
+) =>
+  /\b(find|search|show|get|list|apply|look for)\b/i.test(
+    text
+  ) &&
+  /\b(jobs?|roles?|positions?|openings?|careers?|internships?)\b/i.test(
+    text
+  );
+
+const wantsSportsData = (
+  text: string
+) =>
+  /\b(score|scores|standing|standings|schedule|who won|game tonight|nba|nfl|ufc|mlb|nhl|soccer|basketball|football|fight)\b/i.test(
+    text
+  );
+
+const wantsCurrentWebSearch = (
+  text: string
+) =>
+  /\b(latest|news|today|current|now|recent|2025|2026|price|weather|trending|live|stock|market|who is|where is|when is)\b/i.test(
+    text
+  );
+
+const detectChatMode = ({
+  text,
+  hasImage,
+  hasPdf,
+}: {
+  text: string;
+  hasImage: boolean;
+  hasPdf: boolean;
+}): ChatMode => {
+  if (
+    wantsAttachedFileTask(text) &&
+    !hasImage &&
+    !hasPdf
+  ) {
+    return "file_missing";
+  }
+
+  if (wantsJobSearch(text)) {
+    return "job_search";
+  }
+
+  if (wantsSportsData(text)) {
+    return "sports";
+  }
+
+  if (wantsCurrentWebSearch(text)) {
+    return "web_search";
+  }
+
+  return "normal";
+};
 
 const getStoredMessageText = (
   content: unknown
@@ -261,8 +355,21 @@ export async function POST(
       }
 	    }
 		
-	    const text =
-      messageText.toLowerCase();
+    const dateContext =
+      getCurrentDateContext();
+    const chatMode =
+      detectChatMode({
+        text:
+          messageText,
+        hasImage:
+          Boolean(
+            attachedImage
+          ),
+        hasPdf:
+          Boolean(
+            attachedPdf
+          ),
+      });
 
     // =====================
     // MEMORY SAVE
@@ -311,13 +418,18 @@ export async function POST(
     // JOBS
     // =====================
 
-    const wantsJobs =
-      /\b(job|jobs|hiring|career|careers|remote jobs?)\b/i.test(
-        text
+    if (
+      chatMode ===
+      "file_missing"
+    ) {
+      return new Response(
+        "Please attach the file you want me to work on, then tell me what you want changed or analyzed."
       );
+    }
 
     if (
-      wantsJobs
+      chatMode ===
+      "job_search"
     ) {
 
       const jobs =
@@ -364,75 +476,15 @@ export async function POST(
     }
 
     // =====================
-    // LEADS
-    // =====================
-
-    const wantsLeads =
-      /\b(leads|find companies|find businesses|contractors|businesses in|companies in)\b/i.test(
-        text
-      );
-
-    if (
-      wantsLeads
-    ) {
-
-      const leads =
-        await getLeads(
-          messageText
-        );
-
-      if (
-        !leads.length
-      ) {
-
-        return new Response(
-          "No leads found."
-        );
-      }
-
-      const formatted =
-        leads
-          .slice(
-            0,
-            6
-          )
-          .map(
-            (
-              lead: any,
-              index: number
-            ) => `
-## ${index + 1}. ${lead.name}
-
-🌐 ${lead.website}
-
-📝 ${String(
-  lead.snippet
-).slice(0, 250)}
-`
-          )
-          .join(
-            "\n\n---\n\n"
-          );
-
-      return new Response(
-        formatted
-      );
-    }
-
-    // =====================
     // SPORTS
     // =====================
-
-    const wantsSports =
-      /\b(score|scores|nba|nfl|ufc|mlb|soccer|basketball|football|sports|fight|game tonight|who won)\b/i.test(
-        text
-      );
 
     let sportsContext =
       "";
 
     if (
-      wantsSports
+      chatMode ===
+      "sports"
     ) {
 
       const scores =
@@ -469,16 +521,14 @@ Status: ${game.strStatus}
     // WEB SEARCH
     // =====================
 
-    const wantsWebSearch =
-      /\b(latest|news|today|current|2025|2026|who is|price|weather|trending|live|stock|celebrity|tiktok|sports|fight|game|drake)\b/i.test(
-        text
-      );
-
     let webContext =
       "";
 
     if (
-      wantsWebSearch
+      chatMode ===
+        "web_search" ||
+      chatMode ===
+        "sports"
     ) {
 
       const results =
@@ -665,16 +715,14 @@ ${String(
         system: `
 You are Inquire AI.
 
-A premium elite-level AI assistant.
+You are a sharp, practical AI assistant for real work.
 
-You are:
-- highly intelligent
-- conversational
-- emotionally aware
-- modern
-- fast
-- confident
-- helpful
+Current date/time:
+- ISO: ${dateContext.iso}
+- US Eastern: ${dateContext.eastern}
+
+Current routing mode:
+${chatMode}
 
 You specialize in:
 - coding
@@ -693,6 +741,25 @@ You specialize in:
 - technology
 - everyday life
 
+How to think:
+- First infer the user's real intent from the words, recent conversation, uploaded files, memory, and available live context.
+- Do not make literal keyword mistakes. For example, "random leads" means the user wants useful lead suggestions, not companies named Random.
+- If the request is ambiguous but answerable, make a reasonable assumption and say it briefly.
+- Ask exactly one focused clarifying question only when a missing detail would cause a bad result.
+- For "what should I do next", use the app/business/conversation context instead of answering generically.
+- Keep normal conversation natural. Do not force a tool mode unless the user meaning requires it.
+
+Response style:
+- Be clear, direct, structured, and practical.
+- Avoid generic filler and long disclaimers.
+- Give the next useful action, not just background.
+- For business help, include concrete steps, priorities, tradeoffs, or scripts when useful.
+- Advanced lead generation is a separate product. If the user asks to generate, find, save, score, or enrich leads, direct them to the Lead Engine at /lead-engine and do not perform lead search inside normal chat.
+- For coding help, be precise and explain enough to act.
+- For file/image/PDF analysis, focus on what the user asked and cite visible/extracted details when possible.
+- For current events, prices, schedules, sports, and recent facts, rely on the live context below when provided.
+- For payment, billing, Stripe, or Pro issues, explain the likely account or checkout state clearly and give the next action.
+
 Persistent memory:
 ${memoryText || "No saved memories yet."}
 
@@ -703,17 +770,17 @@ Live sports data:
 ${sportsContext || "No live sports data available."}
 
 Rules:
+- Reason internally before answering.
 - Never sound robotic.
 - Keep responses natural and modern.
 - Adapt to the user's tone.
 - Avoid repetitive phrasing.
-- Think step-by-step internally before answering.
 - Prioritize usefulness and clarity.
 - Be concise unless detail is needed.
 - Use memory naturally.
 - Use web search naturally.
 - Use sports data naturally.
-- Speak like a world-class AI assistant.
+- Never reveal hidden chain-of-thought; summarize conclusions and rationale clearly.
 `,
 
         messages: [

@@ -145,29 +145,16 @@ export default function Sidebar({
 
     <span
   onDoubleClick={async () => {
-
-    const newTitle =
-      prompt(
-        "Rename chat"
-      );
-
-    if (
-      !newTitle
-    )
-      return;
-
-    await supabase
-      .from("chats")
-      .update({
-        title:
-          newTitle,
-      })
-      .eq(
-        "id",
-        chat.id
-      );
-
-    window.location.reload();
+    window.dispatchEvent(
+      new CustomEvent(
+        "inquire:request-rename-chat",
+        {
+          detail: {
+            chat,
+          },
+        }
+      )
+    );
   }}
   className="cursor-pointer"
 >

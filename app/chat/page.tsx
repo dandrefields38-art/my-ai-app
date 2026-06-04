@@ -1,12 +1,13 @@
 "use client";
 
 import {
+  Fragment,
   type ChangeEvent,
   useEffect,
   useRef,
   useState,
-  memo,
 } from "react";
+import dynamic from "next/dynamic";
 
 import {
   Sparkles,
@@ -20,20 +21,59 @@ import {
   LogOut,
   FileText,
   Download,
+  ExternalLink,
+  Building2,
+  MapPin,
+  Star,
+  Save,
+  Check,
+  Award,
+  User,
+  Users,
 } from "lucide-react";
 
-import ReactMarkdown from "react-markdown";
+import LeadEngineMenu from "@/app/components/LeadEngineMenu";
+import MessageTimestamp from "@/app/components/MessageTimestamp";
 
-import remarkGfm from "remark-gfm";
-
-import { motion } from "framer-motion";
+import {
+  useRouter,
+} from "next/navigation";
 
 import { supabase } from "@/lib/supabase";
+import {
+  chatStore,
+  type ChatMessage,
+  type ChatSummary,
+} from "@/lib/chatStore";
+import {
+  formatDateSeparatorLabel,
+  getDateGroupKey,
+  getMessageTimestamp,
+} from "@/lib/messageTime";
 
-type Message = {
-  role: "user" | "assistant";
-  content: string;
-};
+type Message = ChatMessage;
+
+const MarkdownMessage =
+  dynamic(
+    () =>
+      import(
+        "@/app/components/MarkdownMessage"
+      ),
+    {
+      ssr: false,
+    }
+  );
+
+const MotionMessage =
+  dynamic(
+    () =>
+      import(
+        "@/app/components/MotionMessage"
+      ),
+    {
+      ssr: false,
+    }
+  );
 
 type StoredAttachment = {
   type: "image" | "pdf";
@@ -48,9 +88,36 @@ type StoredMessageContent = {
   attachments: StoredAttachment[];
 };
 
-type Chat = {
-  id: string;
-  title: string;
+type Chat = ChatSummary;
+
+type GeneratedLead = {
+  name: string;
+  contact_name?: string;
+  phone?: string;
+  email?: string;
+  website?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  industry?: string;
+  google_rating?: number | string;
+  review_count?: number;
+  lead_score?: number;
+  score_reason?: string;
+};
+
+type LeadModePayload = {
+  active?: boolean;
+  status?: string;
+  question?: string;
+  analysis?: {
+    count?: number;
+    industry?: string;
+    location?: string;
+    businessGoal?: string;
+    requiredContactDetails?: string[];
+    isRandomRequest?: boolean;
+  };
 };
 
 const getChatTitle = (
@@ -234,36 +301,379 @@ const parseStoredMessageContent = (
   };
 };
 
-const MarkdownMessage =
-  memo(
-    function MarkdownMessage({
-      content,
-    }: {
-      content: string;
-    }) {
-      return (
-        <ReactMarkdown
-          remarkPlugins={[
-            remarkGfm,
-          ]}
-          components={{
-            img: (
-              props
-            ) => (
-              <img
-                {...props}
-                loading="lazy"
-                className="rounded-2xl max-w-full"
-                alt=""
-              />
-            ),
-          }}
-        >
-          {content}
-        </ReactMarkdown>
-		  );
-    }
+const isLeadPayload = (
+  content: string
+) =>
+  content.startsWith(
+    "LEADS::"
   );
+
+const isLeadModePayload = (
+  content: string
+) =>
+  content.startsWith(
+    "LEAD_MODE::"
+  );
+
+const parseLeadPayload = (
+  content: string
+) => {
+  try {
+    const parsed =
+      JSON.parse(
+        content.replace(
+          "LEADS::",
+          ""
+        )
+      );
+
+    return Array.isArray(
+      parsed.leads
+    )
+      ? parsed.leads as GeneratedLead[]
+      : [];
+  } catch {
+    return [];
+  }
+};
+
+const parseLeadModePayload = (
+  content: string
+): LeadModePayload => {
+  try {
+    return JSON.parse(
+      content.replace(
+        "LEAD_MODE::",
+        ""
+      )
+    );
+  } catch {
+    return {};
+  }
+};
+
+const LeadModeActiveCard = ({
+  payload,
+}: {
+  payload: LeadModePayload;
+}) => {
+  const analysis =
+    payload.analysis || {};
+
+  return (
+    <div className="w-full whitespace-normal rounded-2xl border border-emerald-400/20 bg-[#111816] p-5 shadow-xl shadow-black/20">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="inline-flex items-center gap-2 rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-medium uppercase text-emerald-200">
+            <Building2 size={14} />
+            Lead Mode Active
+          </div>
+
+          <h2 className="mt-4 text-2xl font-semibold leading-tight text-white">
+            {payload.question ||
+              "Tell me one more detail to generate the right leads."}
+          </h2>
+        </div>
+
+        <a
+          href="/leads"
+          className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-3 py-2 text-sm text-white/80 transition hover:bg-white/[0.09]"
+        >
+          <Users size={16} />
+          Dashboard
+        </a>
+      </div>
+
+      <div className="mt-5 grid gap-3 text-sm sm:grid-cols-2">
+        <div className="rounded-xl bg-white/[0.04] px-3 py-2 text-white/70">
+          Category:{" "}
+          <span className="text-white">
+            {analysis.industry ||
+              "Needed"}
+          </span>
+        </div>
+
+        <div className="rounded-xl bg-white/[0.04] px-3 py-2 text-white/70">
+          Location:{" "}
+          <span className="text-white">
+            {analysis.location ||
+              "Needed"}
+          </span>
+        </div>
+
+        <div className="rounded-xl bg-white/[0.04] px-3 py-2 text-white/70">
+          Count:{" "}
+          <span className="text-white">
+            {analysis.count ||
+              12}
+          </span>
+        </div>
+
+        <div className="rounded-xl bg-white/[0.04] px-3 py-2 text-white/70">
+          Goal:{" "}
+          <span className="text-white">
+            {analysis.businessGoal ||
+              "General outreach"}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const LeadSearchCards = ({
+  leads,
+}: {
+  leads: GeneratedLead[];
+}) => {
+  const [saved, setSaved] =
+    useState<
+      Record<number, string>
+    >({});
+
+  const saveLead =
+    async (
+      lead: GeneratedLead,
+      index: number
+    ) => {
+      setSaved(
+        (
+          prev
+        ) => ({
+          ...prev,
+          [index]:
+            "Saving",
+        })
+      );
+
+      const {
+        data: {
+          session,
+        },
+      } =
+        await supabase.auth.getSession();
+
+      const res =
+        await fetch(
+          "/api/leads",
+          {
+            method:
+              "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+              ...(session?.access_token
+                ? {
+                    Authorization:
+                      `Bearer ${session.access_token}`,
+                  }
+                : {}),
+            },
+            body:
+              JSON.stringify({
+                lead,
+              }),
+          }
+        );
+
+      const data =
+        await res.json();
+
+      setSaved(
+        (
+          prev
+        ) => ({
+          ...prev,
+          [index]:
+            data.inserted > 0
+              ? "Saved"
+              : "Duplicate",
+        })
+      );
+    };
+
+  if (!leads.length) {
+    return (
+      <div className="text-white/65">
+        No business leads found for that search.
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full space-y-4 whitespace-normal">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <div className="text-xs uppercase text-white/45">
+            Lead Mode
+          </div>
+          <h2 className="text-2xl font-semibold leading-tight text-white">
+            {leads.length} business leads found
+          </h2>
+        </div>
+
+        <a
+          href="/leads"
+          className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-3 py-2 text-sm text-white/80 transition hover:bg-white/[0.09]"
+        >
+          <Users size={16} />
+          Leads Dashboard
+        </a>
+      </div>
+
+      <div className="grid gap-4">
+        {leads.map(
+          (
+            lead,
+            index
+          ) => (
+            <article
+              key={`${lead.name}-${index}`}
+              className="rounded-2xl border border-white/10 bg-[#121216] p-4 shadow-xl shadow-black/20"
+            >
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-white/45">
+                    <Building2 size={16} />
+                    <span className="text-xs uppercase">
+                      {lead.industry ||
+                        "Business"}
+                    </span>
+                  </div>
+
+                  <h3 className="mt-2 text-xl font-semibold leading-tight text-white">
+                    {lead.name}
+                  </h3>
+
+                  {lead.contact_name && (
+                    <div className="mt-2 flex items-center gap-2 text-sm text-white/65">
+                      <User size={15} />
+                      {lead.contact_name}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex shrink-0 items-center gap-2">
+                  <div className="rounded-xl bg-emerald-500/15 px-3 py-2 text-sm text-emerald-200">
+                    Score{" "}
+                    {lead.lead_score ||
+                      60}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      saveLead(
+                        lead,
+                        index
+                      )
+                    }
+                    disabled={
+                      saved[index] ===
+                      "Saving"
+                    }
+                    className="inline-flex h-10 items-center gap-2 rounded-xl bg-white px-3 text-sm font-medium text-black transition hover:bg-white/90 disabled:opacity-60"
+                  >
+                    {saved[index] ===
+                    "Saved" ? (
+                      <Check size={16} />
+                    ) : (
+                      <Save size={16} />
+                    )}
+                    {saved[index] ||
+                      "Save"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 text-sm md:grid-cols-2">
+                {lead.phone && (
+                  <a
+                    href={`tel:${lead.phone}`}
+                    className="rounded-xl bg-white/[0.04] px-3 py-2 text-white/80"
+                  >
+                    Phone: {lead.phone}
+                  </a>
+                )}
+
+                {lead.email && (
+                  <a
+                    href={`mailto:${lead.email}`}
+                    className="rounded-xl bg-white/[0.04] px-3 py-2 text-white/80"
+                  >
+                    Email: {lead.email}
+                  </a>
+                )}
+
+                {lead.website && (
+                  <a
+                    href={
+                      lead.website
+                    }
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex min-w-0 items-center gap-2 rounded-xl bg-white/[0.04] px-3 py-2 text-blue-200"
+                  >
+                    <ExternalLink
+                      size={15}
+                    />
+                    <span className="truncate">
+                      {lead.website}
+                    </span>
+                  </a>
+                )}
+
+                {(lead.address ||
+                  lead.city ||
+                  lead.state) && (
+                  <div className="flex items-center gap-2 rounded-xl bg-white/[0.04] px-3 py-2 text-white/75">
+                    <MapPin
+                      size={15}
+                      className="shrink-0"
+                    />
+                    <span>
+                      {lead.address ||
+                        [
+                          lead.city,
+                          lead.state,
+                        ]
+                          .filter(Boolean)
+                          .join(", ")}
+                    </span>
+                  </div>
+                )}
+
+                {(lead.google_rating ||
+                  lead.review_count) && (
+                  <div className="flex items-center gap-2 rounded-xl bg-white/[0.04] px-3 py-2 text-yellow-200">
+                    <Star size={15} />
+                    <span>
+                      {lead.google_rating ||
+                        "N/A"}{" "}
+                      Google rating
+                      {lead.review_count
+                        ? `, ${lead.review_count} reviews`
+                        : ""}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-4 flex items-start gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3 text-sm text-white/70">
+                <Award
+                  size={16}
+                  className="mt-0.5 shrink-0 text-emerald-200"
+                />
+                {lead.score_reason ||
+                  "Potential fit based on category and location match."}
+              </div>
+            </article>
+          )
+        )}
+      </div>
+    </div>
+  );
+};
 
 const ChatMessageContent = ({
   message,
@@ -276,6 +686,44 @@ const ChatMessageContent = ({
         message.content
       )
     );
+
+  if (
+    message.role === "assistant" &&
+    isLeadModePayload(
+      String(
+        message.content
+      )
+    )
+  ) {
+    return (
+      <LeadModeActiveCard
+        payload={parseLeadModePayload(
+          String(
+            message.content
+          )
+        )}
+      />
+    );
+  }
+
+  if (
+    message.role === "assistant" &&
+    isLeadPayload(
+      String(
+        message.content
+      )
+    )
+  ) {
+    return (
+      <LeadSearchCards
+        leads={parseLeadPayload(
+          String(
+            message.content
+          )
+        )}
+      />
+    );
+  }
 
   if (
     message.role === "assistant" &&
@@ -418,6 +866,8 @@ const ChatMessageContent = ({
 };
 
 export default function ChatPage() {
+  const router =
+    useRouter();
 
   const [input, setInput] =
     useState("");
@@ -458,6 +908,10 @@ export default function ChatPage() {
 
   const speechTimeout =
     useRef<any>(null);
+  const activeChatRef =
+    useRef<string | null>(
+      null
+    );
 
   // =====================
   // AUTO SCROLL
@@ -490,6 +944,23 @@ export default function ChatPage() {
     getUser();
   }, []);
 
+  useEffect(
+    () => {
+      setChats(
+        chatStore.getChats()
+      );
+
+      return chatStore.subscribe(
+        () => {
+          setChats(
+            chatStore.getChats()
+          );
+        }
+      );
+    },
+    []
+  );
+
   const getUser =
     async () => {
 
@@ -504,7 +975,7 @@ export default function ChatPage() {
           user.id
         );
 
-        loadChats(
+        await loadChats(
           user.id
         );
       }
@@ -519,27 +990,39 @@ export default function ChatPage() {
       currentUserId: string
     ) => {
 
-      const { data } =
-        await supabase
-          .from("chats")
-          .select("*")
-          .eq(
-            "user_id",
-            currentUserId
-          )
-          .order(
-            "created_at",
-            {
-              ascending:
-                false,
-            }
-          );
-
-      if (data) {
+      const data =
+        await chatStore.loadChats(
+          currentUserId
+        );
 
         setChats(data);
 
+        const params =
+          typeof window ===
+          "undefined"
+            ? null
+            : new URLSearchParams(
+                window.location.search
+              );
+        const requestedChatId =
+          params?.get(
+            "chatId"
+          );
+
         if (
+          requestedChatId &&
+          data.some(
+            (
+              chat
+            ) =>
+              chat.id ===
+              requestedChatId
+          )
+        ) {
+          setChatId(
+            requestedChatId
+          );
+        } else if (
           data.length > 0
         ) {
 
@@ -547,7 +1030,6 @@ export default function ChatPage() {
             data[0].id
           );
         }
-      }
     };
 
   // =====================
@@ -559,9 +1041,10 @@ export default function ChatPage() {
     if (!chatId)
       return;
 
-    loadMessages(
-      chatId
-    );
+    activeChatRef.current =
+      chatId;
+
+    loadMessages(chatId);
 
   }, [chatId]);
 
@@ -570,37 +1053,36 @@ export default function ChatPage() {
       selectedChatId: string
     ) => {
 
-      const { data } =
-        await supabase
-          .from("messages")
-          .select("*")
-          .eq(
-            "chat_id",
-            selectedChatId
-          )
-          .order(
-            "created_at",
-            {
-              ascending:
-                true,
-            }
-          );
-
-      if (data) {
-
-        setMessages(
-          data.map(
-            (
-              m: any
-            ) => ({
-              role:
-                m.role,
-
-              content:
-                m.content,
-            })
-          )
+      const cached =
+        chatStore.getMessages(
+          selectedChatId
         );
+
+      if (cached) {
+        setMessages(cached);
+      } else {
+        setMessages([]);
+      }
+
+      if (
+        selectedChatId.startsWith(
+          "temp-"
+        )
+      ) {
+        return;
+      }
+
+      const latest =
+        await chatStore.loadMessages(
+          selectedChatId,
+          false
+        );
+
+      if (
+        activeChatRef.current ===
+        selectedChatId
+      ) {
+        setMessages(latest);
       }
     };
 
@@ -613,6 +1095,27 @@ export default function ChatPage() {
 
       if (!userId)
         return;
+
+      const temporaryId =
+        `temp-${Date.now()}`;
+      const optimisticChat: Chat = {
+        id: temporaryId,
+        title: "New Chat",
+        created_at:
+          new Date().toISOString(),
+        updated_at:
+          new Date().toISOString(),
+      };
+
+      chatStore.upsertChat(
+        optimisticChat
+      );
+      chatStore.setMessages(
+        temporaryId,
+        []
+      );
+      setChatId(temporaryId);
+      setMessages([]);
 
       const { data } =
         await supabase
@@ -630,25 +1133,115 @@ export default function ChatPage() {
           .single();
 
       if (data) {
-
-        setChats(
-          (
-            prev
-          ) => [
-            data,
-            ...prev,
-          ]
+        chatStore.replaceChatId(
+          temporaryId,
+          data
         );
 
         setChatId(
           data.id
         );
 
+        router.replace(
+          `/chat?chatId=${data.id}`
+        );
+
         setMessages(
           []
         );
+
+        window.dispatchEvent(
+          new CustomEvent(
+            "inquire:refresh-chats",
+            {
+              detail: {
+                chatId:
+                  data.id,
+              },
+            }
+          )
+        );
+      } else {
+        chatStore.removeChat(
+          temporaryId
+        );
       }
     };
+
+  useEffect(() => {
+    const handleNewChat =
+      () => {
+        createChat();
+      };
+
+    window.addEventListener(
+      "inquire:new-chat",
+      handleNewChat
+    );
+
+    return () =>
+      window.removeEventListener(
+        "inquire:new-chat",
+        handleNewChat
+      );
+  }, [userId]);
+
+  useEffect(() => {
+    const handleSelectChat =
+      (
+        event: Event
+      ) => {
+        const detail =
+          (
+            event as CustomEvent<{
+              chatId?: string | null;
+            }>
+          ).detail;
+
+        setChatId(
+          detail?.chatId ||
+            null
+        );
+
+        if (!detail?.chatId) {
+          setMessages([]);
+        }
+      };
+
+    window.addEventListener(
+      "inquire:select-chat",
+      handleSelectChat
+    );
+
+    return () =>
+      window.removeEventListener(
+        "inquire:select-chat",
+        handleSelectChat
+      );
+  }, []);
+
+  useEffect(() => {
+    if (
+      !userId ||
+      typeof window === "undefined"
+    ) {
+      return;
+    }
+
+    const params =
+      new URLSearchParams(
+        window.location.search
+      );
+
+    if (
+      params.get("new") !==
+      "1"
+    ) {
+      return;
+    }
+
+    createChat();
+  }, [userId, router]);
 
   // =====================
   // UPDATE CHAT TITLE
@@ -695,23 +1288,21 @@ export default function ChatPage() {
         return false;
       }
 
-      setChats(
-        (
-          prev
-        ) =>
-          prev.map(
-            (
-              chat
-            ) =>
-              chat.id ===
-              selectedChatId
-                ? {
-                    ...chat,
-                    title:
-                      nextTitle,
-                  }
-                : chat
-          )
+      chatStore.updateChatTitle(
+        selectedChatId,
+        nextTitle
+      );
+
+      window.dispatchEvent(
+        new CustomEvent(
+          "inquire:refresh-chats",
+          {
+            detail: {
+              chatId:
+                selectedChatId,
+            },
+          }
+        )
       );
 
       return true;
@@ -721,20 +1312,16 @@ export default function ChatPage() {
     async (
       selectedChat: Chat
     ) => {
-
-      const title =
-        prompt(
-          "Rename chat",
-          selectedChat.title ||
-            "New Chat"
-        );
-
-      if (title === null)
-        return;
-
-      await updateChatTitle(
-        selectedChat.id,
-        title
+      window.dispatchEvent(
+        new CustomEvent(
+          "inquire:request-rename-chat",
+          {
+            detail: {
+              chat:
+                selectedChat,
+            },
+          }
+        )
       );
     };
 
@@ -744,14 +1331,6 @@ export default function ChatPage() {
     ) => {
 
       if (!userId)
-        return;
-
-      const confirmed =
-        window.confirm(
-          "Delete this chat?"
-        );
-
-      if (!confirmed)
         return;
 
       const { error: messagesError } =
@@ -800,18 +1379,20 @@ export default function ChatPage() {
         return;
       }
 
-      setChats(
-        (
-          prev
-        ) => {
-          const nextChats =
-            prev.filter(
-              (
-                chat
-              ) =>
-                chat.id !==
-                selectedChatId
-            );
+      const nextChats =
+        chatStore
+          .getChats()
+          .filter(
+            (
+              chat
+            ) =>
+              chat.id !==
+              selectedChatId
+          );
+
+      chatStore.removeChat(
+        selectedChatId
+      );
 
           if (
             chatId ===
@@ -831,8 +1412,19 @@ export default function ChatPage() {
             );
           }
 
-          return nextChats;
-        }
+      window.dispatchEvent(
+        new CustomEvent(
+          "inquire:refresh-chats",
+          {
+            detail: {
+              chatId:
+                chatId ===
+                selectedChatId
+                  ? null
+                  : chatId,
+            },
+          }
+        )
       );
     };
 
@@ -946,8 +1538,9 @@ export default function ChatPage() {
 	  const logout =
 	    async () => {
 	      await supabase.auth.signOut();
-	      window.location.href =
-	        "/login";
+	      router.replace(
+	        "/login"
+	      );
 	    };
 
   const getAuthHeaders =
@@ -1119,6 +1712,12 @@ export default function ChatPage() {
 
       let currentChatId =
         chatId;
+      let temporaryChatId:
+        | string
+        | null = null;
+      let pendingChat:
+        | Promise<Chat | null>
+        | null = null;
 
       const text =
         input.trim();
@@ -1224,63 +1823,91 @@ export default function ChatPage() {
       if (
         !currentChatId
       ) {
-
-	        const { data } =
-	          await supabase
-	            .from("chats")
-	            .insert([
-	              {
-		                title:
-		                  getChatTitle(
-		                    titleText
-		                  ),
-
-                user_id:
-                  userId,
-              },
-            ])
-            .select()
-            .single();
-
-        if (!data) {
-
-          setLoading(
-            false
-          );
-
-          return;
-        }
-
+        temporaryChatId =
+          `temp-${Date.now()}`;
         currentChatId =
-          data.id;
+          temporaryChatId;
+
+        const optimisticChat: Chat = {
+          id: temporaryChatId,
+          title:
+            getChatTitle(
+              titleText
+            ),
+          created_at:
+            new Date().toISOString(),
+          updated_at:
+            new Date().toISOString(),
+        };
+
+        chatStore.upsertChat(
+          optimisticChat
+        );
 
         setChatId(
-          data.id
+          temporaryChatId
         );
 
-        setChats(
-          (
-            prev
-          ) => [
-            data,
-            ...prev,
-          ]
-        );
+        pendingChat =
+          Promise.resolve(
+            supabase
+              .from("chats")
+              .insert([
+                {
+                  title:
+                    getChatTitle(
+                      titleText
+                    ),
+                  user_id:
+                    userId,
+                },
+              ])
+              .select()
+              .single()
+          ).then(
+            ({
+              data,
+              error,
+            }) => {
+              if (error || !data) {
+                console.log(
+                  "CHAT CREATE ERROR:",
+                  error
+                );
+                return null;
+              }
+
+              return data;
+            }
+          );
       }
 
       const updatedMessages =
-        [
-          ...messages,
-          {
-            role:
-              "user" as const,
+        (() => {
+          const now =
+            new Date().toISOString();
 
-	            content:
-	              userMessageContent,
-	          },
-	        ];
+          return [
+            ...messages,
+            {
+              role:
+                "user" as const,
+
+              content:
+                userMessageContent,
+              created_at:
+                now,
+              updated_at:
+                now,
+            },
+          ];
+        })();
 
       setMessages(
+        updatedMessages
+      );
+      chatStore.setMessages(
+        currentChatId,
         updatedMessages
       );
 
@@ -1288,10 +1915,13 @@ export default function ChatPage() {
 
 	      if (
 	        updatedMessages.length === 1 &&
-	        currentChatId
+	        currentChatId &&
+          !currentChatId.startsWith(
+            "temp-"
+          )
 	      ) {
 	
-	        await updateChatTitle(
+	        updateChatTitle(
 	          currentChatId,
 		          getChatTitle(
 		            titleText
@@ -1343,21 +1973,123 @@ export default function ChatPage() {
 	              ? `IMAGE::${data.imageUrl}`
 	              : data.error ||
 	                "Image generation failed.";
-
-          setMessages(
-            (
-              prev
-            ) => [
-              ...prev,
+          const imageAssistantTimestamp =
+            new Date().toISOString();
+          const imageMessages =
+            [
+              ...updatedMessages,
               {
                 role:
-                  "assistant",
-
+                  "assistant" as const,
                 content:
                   reply,
+                created_at:
+                  imageAssistantTimestamp,
+                updated_at:
+                  imageAssistantTimestamp,
               },
-            ]
+            ];
+
+          setMessages(
+            imageMessages
           );
+
+          if (currentChatId) {
+            chatStore.setMessages(
+              currentChatId,
+              imageMessages
+            );
+          }
+
+          let persistedImageChatId =
+            currentChatId;
+
+          if (pendingChat) {
+            const persistedChat =
+              await pendingChat;
+
+            if (
+              persistedChat &&
+              temporaryChatId
+            ) {
+              persistedImageChatId =
+                persistedChat.id;
+              chatStore.replaceChatId(
+                temporaryChatId,
+                persistedChat
+              );
+              setChatId(
+                persistedChat.id
+              );
+              router.replace(
+                `/chat?chatId=${persistedChat.id}`
+              );
+            }
+          }
+
+          if (
+            persistedImageChatId &&
+            !persistedImageChatId.startsWith(
+              "temp-"
+            )
+          ) {
+            chatStore.updateChatActivity(
+              persistedImageChatId,
+              imageAssistantTimestamp
+            );
+            await supabase
+              .from("messages")
+              .insert([
+                {
+                  chat_id:
+                    persistedImageChatId,
+                  user_id:
+                    userId,
+                  role:
+                    "user",
+                  content:
+                    userMessageContent,
+                  created_at:
+                    updatedMessages[
+                      updatedMessages.length -
+                        1
+                    ].created_at,
+                  updated_at:
+                    updatedMessages[
+                      updatedMessages.length -
+                        1
+                    ].updated_at,
+                },
+                {
+                  chat_id:
+                    persistedImageChatId,
+                  user_id:
+                    userId,
+                  role:
+                    "assistant",
+                  content:
+                    reply,
+                  created_at:
+                    imageAssistantTimestamp,
+                  updated_at:
+                    imageAssistantTimestamp,
+                },
+              ]);
+            await supabase
+              .from("chats")
+              .update({
+                updated_at:
+                  imageAssistantTimestamp,
+              })
+              .eq(
+                "id",
+                persistedImageChatId
+              )
+              .eq(
+                "user_id",
+                userId
+              );
+          }
 
           setLoading(
             false
@@ -1466,21 +2198,108 @@ export default function ChatPage() {
 
         let assistantText =
           "";
+        const assistantTimestamp =
+          new Date().toISOString();
+        let lastStreamFlush =
+          performance.now();
+        let streamFlushTimer:
+          | ReturnType<
+              typeof setTimeout
+            >
+          | null = null;
 
-        setMessages(
-          (
-            prev
-          ) => [
-            ...prev,
+        const messagesWithAssistant =
+          [
+            ...updatedMessages,
             {
               role:
-                "assistant",
-
+                "assistant" as const,
               content:
                 "",
+              created_at:
+                assistantTimestamp,
+              updated_at:
+                assistantTimestamp,
             },
-          ]
+          ];
+
+        setMessages(
+          messagesWithAssistant
         );
+        chatStore.setMessages(
+          currentChatId,
+          messagesWithAssistant
+        );
+
+        const flushAssistantMessage =
+          () => {
+            lastStreamFlush =
+              performance.now();
+            const updated =
+              [
+                ...updatedMessages,
+                {
+                  role:
+                    "assistant" as const,
+
+                  content:
+                    assistantText,
+                  created_at:
+                    assistantTimestamp,
+                  updated_at:
+                    new Date().toISOString(),
+                },
+              ];
+
+            setMessages(
+              updated
+            );
+            chatStore.setMessages(
+              currentChatId,
+              updated
+            );
+          };
+
+        const scheduleStreamFlush =
+          () => {
+            const elapsed =
+              performance.now() -
+              lastStreamFlush;
+
+            if (elapsed >= 45) {
+              if (
+                streamFlushTimer
+              ) {
+                clearTimeout(
+                  streamFlushTimer
+                );
+                streamFlushTimer =
+                  null;
+              }
+
+              flushAssistantMessage();
+              return;
+            }
+
+            if (
+              streamFlushTimer
+            ) {
+              return;
+            }
+
+            streamFlushTimer =
+              setTimeout(
+                () => {
+                  streamFlushTimer =
+                    null;
+                  flushAssistantMessage();
+                },
+                Math.max(
+                  30,
+                  45 - elapsed
+                )
+              );
+          };
 
         while (
           true
@@ -1505,42 +2324,105 @@ export default function ChatPage() {
           assistantText +=
             chunk;
 
-          setMessages(
-            (
-              prev
-            ) => {
-
-              const updated =
-                [
-                  ...prev,
-                ];
-
-              updated[
-                updated.length -
-                  1
-              ] = {
-                role:
-                  "assistant",
-
-                content:
-                  assistantText,
-              };
-
-              return updated;
-            }
-          );
+          scheduleStreamFlush();
         }
+
+        if (
+          streamFlushTimer
+        ) {
+          clearTimeout(
+            streamFlushTimer
+          );
+          streamFlushTimer =
+            null;
+        }
+
+        flushAssistantMessage();
 
         speakText(
           assistantText
         );
+
+        let persistedChatId =
+          currentChatId;
+
+        if (pendingChat) {
+          const persistedChat =
+            await pendingChat;
+
+          if (
+            persistedChat &&
+            temporaryChatId
+          ) {
+            persistedChatId =
+              persistedChat.id;
+            chatStore.replaceChatId(
+              temporaryChatId,
+              persistedChat
+            );
+            chatStore.setMessages(
+              persistedChat.id,
+              [
+                ...updatedMessages,
+                {
+                  role:
+                    "assistant",
+                  content:
+                    assistantText,
+                  created_at:
+                    assistantTimestamp,
+                  updated_at:
+                    new Date().toISOString(),
+                },
+              ]
+            );
+            setChatId(
+              persistedChat.id
+            );
+            router.replace(
+              `/chat?chatId=${persistedChat.id}`
+            );
+            window.dispatchEvent(
+              new CustomEvent(
+                "inquire:refresh-chats",
+                {
+                  detail: {
+                    chatId:
+                      persistedChat.id,
+                  },
+                }
+              )
+            );
+          } else if (
+            temporaryChatId
+          ) {
+            chatStore.removeChat(
+              temporaryChatId
+            );
+          }
+        }
+
+        const persistedAt =
+          new Date().toISOString();
+
+        if (
+          persistedChatId &&
+          !persistedChatId.startsWith(
+            "temp-"
+          )
+        ) {
+          chatStore.updateChatActivity(
+            persistedChatId,
+            persistedAt
+          );
+        }
 
 	        await supabase
 	          .from("messages")
           .insert([
             {
               chat_id:
-                currentChatId,
+                persistedChatId,
 
               user_id:
                 userId,
@@ -1550,11 +2432,18 @@ export default function ChatPage() {
 
 	              content:
 	                userMessageContent,
+              created_at:
+                updatedMessages[
+                  updatedMessages.length -
+                    1
+                ].created_at,
+              updated_at:
+                persistedAt,
             },
 
             {
               chat_id:
-                currentChatId,
+                persistedChatId,
 
               user_id:
                 userId,
@@ -1564,8 +2453,34 @@ export default function ChatPage() {
 
               content:
                 assistantText,
+              created_at:
+                assistantTimestamp,
+              updated_at:
+                persistedAt,
             },
 	          ]);
+
+        if (
+          persistedChatId &&
+          !persistedChatId.startsWith(
+            "temp-"
+          )
+        ) {
+          await supabase
+            .from("chats")
+            .update({
+              updated_at:
+                persistedAt,
+            })
+            .eq(
+              "id",
+              persistedChatId
+            )
+            .eq(
+              "user_id",
+              userId
+            );
+        }
 
 		      } catch (
         err
@@ -1582,13 +2497,13 @@ export default function ChatPage() {
     };
 
   return (
-    <main className="h-screen w-screen overflow-hidden bg-[#050505] text-white">
+    <main className="h-screen w-full overflow-hidden bg-[#050505] text-white">
 
       <div className="relative flex h-screen p-2 md:p-4 gap-4">
 
         {/* SIDEBAR */}
 
-        <aside className="hidden md:flex w-[290px] rounded-[32px] border border-white/10 bg-white/[0.03] backdrop-blur-3xl overflow-hidden flex-col justify-between">
+        <aside className="hidden">
 
           <div className="px-6 pt-7">
 
@@ -1626,6 +2541,8 @@ export default function ChatPage() {
               New Chat
 
             </button>
+
+            <LeadEngineMenu />
             <button
   onClick={async () => {
     const authHeaders =
@@ -1737,8 +2654,15 @@ export default function ChatPage() {
                     <button
                       type="button"
                       onClick={() =>
-                        deleteChat(
-                          chat.id
+                        window.dispatchEvent(
+                          new CustomEvent(
+                            "inquire:request-delete-chat",
+                            {
+                              detail: {
+                                chat,
+                              },
+                            }
+                          )
                         )
                       }
                       aria-label="Delete chat"
@@ -1818,19 +2742,60 @@ export default function ChatPage() {
                 (
                   message,
                   i
-                ) => (
+                ) => {
+                  const timestamp =
+                    getMessageTimestamp(
+                      message
+                    );
+                  const dateKey =
+                    getDateGroupKey(
+                      timestamp
+                    );
+                  const previous =
+                    messages[
+                      i - 1
+                    ];
+                  const previousKey =
+                    previous
+                      ? getDateGroupKey(
+                          getMessageTimestamp(
+                            previous
+                          )
+                        )
+                      : null;
+                  const showDateDivider =
+                    dateKey !==
+                    previousKey;
+                  const leadMessage =
+                    message.role ===
+                      "assistant" &&
+                    (
+                      isLeadPayload(
+                        String(
+                          message.content
+                        )
+                      ) ||
+                      isLeadModePayload(
+                        String(
+                          message.content
+                        )
+                      )
+                    );
 
-                  <motion.div
-                    key={i}
-                    initial={{
-                      opacity: 0,
-                    }}
-                    animate={{
-                      opacity: 1,
-                    }}
-                    transition={{
-                      duration: 0.15,
-                    }}
+                  return (
+                  <Fragment
+                    key={`${i}-${dateKey}`}
+                  >
+                    {showDateDivider && (
+                      <DateDivider
+                        label={formatDateSeparatorLabel(
+                          timestamp
+                        )}
+                      />
+                    )}
+
+                  <MotionMessage
+                    key={`message-${i}`}
                     className={`flex ${
                       message.role ===
                       "user"
@@ -1840,7 +2805,7 @@ export default function ChatPage() {
                   >
 
                     <div
-                      className={`max-w-[90%] md:max-w-[80%] rounded-[28px] px-5 py-4 text-base md:text-lg leading-relaxed whitespace-pre-wrap ${
+                      className={`${leadMessage ? "w-full max-w-full" : "max-w-[90%] md:max-w-[80%]"} rounded-[28px] px-5 py-4 text-base md:text-lg leading-relaxed whitespace-pre-wrap ${
                         message.role ===
                         "user"
                           ? "bg-white text-black"
@@ -1854,10 +2819,30 @@ export default function ChatPage() {
                         }
                       />
 
+                      <MessageTimestamp
+                        timestamp={
+                          timestamp
+                        }
+                        align={
+                          message.role ===
+                          "user"
+                            ? "right"
+                            : "left"
+                        }
+                        tone={
+                          message.role ===
+                          "user"
+                            ? "dark"
+                            : "muted"
+                        }
+                      />
+
                     </div>
 
-                  </motion.div>
-                )
+                  </MotionMessage>
+                  </Fragment>
+                  );
+                }
               )}
 
               <div ref={bottomRef} />
@@ -1987,5 +2972,21 @@ export default function ChatPage() {
       </div>
 
     </main>
+  );
+}
+
+function DateDivider({
+  label,
+}: {
+  label: string;
+}) {
+  return (
+    <div className="flex items-center gap-3 py-2">
+      <div className="h-px flex-1 bg-white/10" />
+      <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-white/45">
+        {label}
+      </span>
+      <div className="h-px flex-1 bg-white/10" />
+    </div>
   );
 }

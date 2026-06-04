@@ -7,15 +7,20 @@ const protectedApiPaths =
   [
     "/api/apollo-contacts",
     "/api/apollo-enrich",
+    "/api/billing",
     "/api/chat",
     "/api/checkout",
     "/api/cover-letter",
     "/api/images",
     "/api/jobs",
+    "/api/lead-engine",
     "/api/resume",
     "/api/save-leads",
     "/api/saved-jobs",
+    "/api/settings",
     "/api/stripe/checkout",
+    "/api/stripe/customer-portal",
+    "/api/stripe/lead-engine-checkout",
   ];
 
 const addSecurityHeaders = (

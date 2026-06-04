@@ -1,5 +1,9 @@
 "use client";
 
+import {
+  useState,
+} from "react";
+
 import { supabase } from "@/lib/supabase";
 
 import {
@@ -7,8 +11,20 @@ import {
 } from "lucide-react";
 
 export default function LoginPage() {
+  const [loadingAction, setLoadingAction] =
+    useState<
+      "google" | "email" | null
+    >(null);
+
   const signInWithGoogle =
     async () => {
+      const redirectTo =
+        getRedirectTo();
+
+      setLoadingAction(
+        "google"
+      );
+
       await supabase.auth.signInWithOAuth(
         {
           provider:
@@ -16,7 +32,7 @@ export default function LoginPage() {
 
           options: {
             redirectTo:
-              "http://localhost:3000/chat",
+              redirectTo,
           },
         }
       );
@@ -27,6 +43,12 @@ export default function LoginPage() {
       e: any
     ) => {
       e.preventDefault();
+      const redirectTo =
+        getRedirectTo();
+
+      setLoadingAction(
+        "email"
+      );
 
       const email =
         e.target.email.value;
@@ -37,7 +59,7 @@ export default function LoginPage() {
 
           options: {
             emailRedirectTo:
-              "http://localhost:3000/chat",
+              redirectTo,
           },
         }
       );
@@ -45,11 +67,15 @@ export default function LoginPage() {
       alert(
         "Check your email for login link."
       );
+
+      setLoadingAction(
+        null
+      );
     };
 
   return (
-    <main className="min-h-screen bg-black text-white flex items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-[36px] border border-white/10 bg-white/[0.03] backdrop-blur-3xl p-8 shadow-2xl">
+    <main className="page-transition flex min-h-screen items-center justify-center bg-[#050505] p-6 text-white">
+      <div className="content-transition w-full max-w-md rounded-[36px] border border-white/10 bg-white/[0.03] p-8 shadow-2xl backdrop-blur-3xl">
         <div className="flex items-center gap-4 mb-8">
           <div className="w-14 h-14 rounded-3xl bg-gradient-to-br from-purple-400 to-purple-700 flex items-center justify-center">
             <Sparkles className="text-white" />
@@ -71,9 +97,15 @@ export default function LoginPage() {
           onClick={
             signInWithGoogle
           }
-          className="w-full h-14 rounded-2xl bg-white text-black font-medium hover:scale-[1.02] transition mb-6"
+          disabled={
+            loadingAction !== null
+          }
+          className="mb-6 h-14 w-full rounded-2xl bg-white font-medium text-black transition hover:scale-[1.01] disabled:scale-100 disabled:opacity-60"
         >
-          Continue with Google
+          {loadingAction ===
+          "google"
+            ? "Connecting..."
+            : "Continue with Google"}
         </button>
 
         <div className="text-center text-white/40 mb-6">
@@ -95,11 +127,36 @@ export default function LoginPage() {
             className="w-full h-14 rounded-2xl bg-white/[0.04] border border-white/10 px-5 outline-none"
           />
 
-          <button className="w-full h-14 rounded-2xl bg-blue-600 hover:bg-blue-500 transition font-medium">
-            Send Login Link
+          <button
+            disabled={
+              loadingAction !==
+              null
+            }
+            className="h-14 w-full rounded-2xl bg-blue-600 font-medium transition hover:bg-blue-500 disabled:opacity-60"
+          >
+            {loadingAction ===
+            "email"
+              ? "Sending..."
+              : "Send Login Link"}
           </button>
         </form>
       </div>
     </main>
   );
+}
+
+function getRedirectTo() {
+  const params =
+    new URLSearchParams(
+      window.location.search
+    );
+  const next =
+    params.get("next");
+  const safeNext =
+    next?.startsWith("/") &&
+    !next.startsWith("//")
+      ? next
+      : "/chat";
+
+  return `${window.location.origin}${safeNext}`;
 }

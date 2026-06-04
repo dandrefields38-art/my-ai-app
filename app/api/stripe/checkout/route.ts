@@ -95,14 +95,28 @@ export async function POST(
               ? {
                   userId:
                     checkoutUserId,
+                  product:
+                    "pro_ai",
+                }
+              : undefined,
+
+          subscription_data:
+            checkoutUserId
+              ? {
+                  metadata: {
+                    userId:
+                      checkoutUserId,
+                    product:
+                      "pro_ai",
+                  },
                 }
               : undefined,
 
           success_url:
-            `${appUrl}/chat?checkout=success`,
+            `${appUrl}/billing?checkout=pro-ai-success`,
 
           cancel_url:
-            `${appUrl}/chat?checkout=canceled`,
+            `${appUrl}/upgrade?checkout=canceled`,
         }
       );
 

@@ -55,6 +55,14 @@ export const requiredEnv = {
     readEnv(
       "STRIPE_PRICE_ID"
     ),
+  leadEngineStripePriceId: () =>
+    readEnv(
+      "STRIPE_LEAD_ENGINE_PRO_PRICE_ID"
+    ),
+  stripeWebhookSecret: () =>
+    getOptionalEnv(
+      "STRIPE_WEBHOOK_SECRET"
+    ),
   apolloApiKey: () =>
     readEnv(
       "APOLLO_API_KEY"
