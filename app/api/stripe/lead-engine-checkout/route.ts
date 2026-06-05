@@ -28,6 +28,22 @@ export async function POST(
   req: Request
 ) {
   try {
+    const authorizationHeader =
+      req.headers.get(
+        "authorization"
+      );
+
+    console.log(
+      "Lead Engine checkout route auth:",
+      {
+        route_hit: true,
+        authorization_header_present:
+          authorizationHeader?.startsWith(
+            "Bearer "
+          ) || false,
+      }
+    );
+
     const auth =
       await requireApiAuth(
         req,
@@ -44,8 +60,26 @@ export async function POST(
       );
 
     if (auth.response) {
+      console.log(
+        "Lead Engine checkout route auth failed:",
+        {
+          response_status:
+            auth.response.status,
+          user_exists:
+            Boolean(auth.user),
+        }
+      );
+
       return auth.response;
     }
+
+    console.log(
+      "Lead Engine checkout route auth passed:",
+      {
+        user_exists:
+          Boolean(auth.user),
+      }
+    );
 
     const userId =
       auth.user!.id;

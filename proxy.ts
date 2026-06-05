@@ -62,12 +62,33 @@ export function proxy(
           `${path}/`
         )
     );
+  const authorizationHeader =
+    req.headers.get(
+      "authorization"
+    );
+
+  if (
+    pathname ===
+    "/api/stripe/lead-engine-checkout"
+  ) {
+    console.log(
+      "Lead Engine checkout proxy auth:",
+      {
+        protected_api:
+          isProtectedApi,
+        authorization_header_present:
+          authorizationHeader?.startsWith(
+            "Bearer "
+          ) || false,
+      }
+    );
+  }
 
   if (
     isProtectedApi &&
-    !req.headers
-      .get("authorization")
-      ?.startsWith("Bearer ")
+    !authorizationHeader?.startsWith(
+      "Bearer "
+    )
   ) {
     return addSecurityHeaders(
       NextResponse.json(

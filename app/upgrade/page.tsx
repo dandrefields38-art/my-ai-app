@@ -117,6 +117,34 @@ export default function UpgradePage() {
           return;
         }
 
+        const headers = {
+          "Content-Type":
+            "application/json",
+          ...(session?.access_token
+            ? {
+                Authorization:
+                  `Bearer ${session.access_token}`,
+              }
+            : {}),
+        };
+
+        console.log(
+          "Lead Engine checkout client auth:",
+          {
+            selected_plan:
+              selectedPlan,
+            session_exists:
+              Boolean(session),
+            token_exists:
+              Boolean(
+                session?.access_token
+              ),
+            authorization_header_present:
+              "Authorization" in
+              headers,
+          }
+        );
+
         const res =
           await fetch(
             selectedPlan ===
@@ -126,16 +154,7 @@ export default function UpgradePage() {
             {
               method:
                 "POST",
-              headers: {
-                "Content-Type":
-                  "application/json",
-                ...(session?.access_token
-                  ? {
-                      Authorization:
-                        `Bearer ${session.access_token}`,
-                    }
-                  : {}),
-              },
+              headers,
               body:
                 JSON.stringify({}),
             }
