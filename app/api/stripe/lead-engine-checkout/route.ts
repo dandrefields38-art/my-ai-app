@@ -2,10 +2,22 @@ import Stripe from "stripe";
 import { requiredEnv } from "@/lib/env";
 import { requireApiAuth } from "@/lib/security";
 
+const stripeSecretKey =
+  requiredEnv.stripeSecretKey();
+const stripeMode =
+  stripeSecretKey.startsWith(
+    "sk_live_"
+  )
+    ? "live"
+    : stripeSecretKey.startsWith(
+          "sk_test_"
+        )
+      ? "test"
+      : "unknown";
+
 const stripe =
   new Stripe(
-    requiredEnv
-      .stripeSecretKey(),
+    stripeSecretKey,
     {
       apiVersion:
         "2025-08-27.basil" as any,
@@ -51,6 +63,9 @@ export async function POST(
       `${appUrl}/billing?checkout=lead-engine-success&session_id={CHECKOUT_SESSION_ID}`;
     const cancel_url =
       `${appUrl}/upgrade?checkout=canceled`;
+    const leadEnginePriceId =
+      requiredEnv
+        .leadEngineStripePriceId();
 
     console.log(
       "APP_URL:",
@@ -69,6 +84,23 @@ export async function POST(
       "CANCEL_URL:",
       cancel_url
     );
+    console.log(
+      "STRIPE_LEAD_ENGINE_PRO_PRICE_ID exists:",
+      leadEnginePriceId
+        ? "yes"
+        : "no"
+    );
+    console.log(
+      "STRIPE_LEAD_ENGINE_PRO_PRICE_ID prefix:",
+      leadEnginePriceId.slice(
+        0,
+        10
+      )
+    );
+    console.log(
+      "Stripe mode:",
+      stripeMode
+    );
 
     const session =
       await stripe.checkout.sessions.create(
@@ -80,8 +112,7 @@ export async function POST(
           line_items: [
             {
               price:
-                requiredEnv
-                  .leadEngineStripePriceId(),
+                leadEnginePriceId,
               quantity:
                 1,
             },
@@ -124,15 +155,26 @@ export async function POST(
         session.url,
     });
   } catch (error) {
+    const stripeErrorMessage =
+      error instanceof Error
+        ? error.message
+        : String(error);
+
     console.log(
-      "LEAD ENGINE CHECKOUT ERROR:",
-      error
+      "LEAD ENGINE CHECKOUT STRIPE ERROR:",
+      stripeErrorMessage
+    );
+    console.log(
+      "LEAD ENGINE CHECKOUT RESPONSE STATUS:",
+      500
     );
 
     return Response.json(
       {
         error:
           "Lead Engine checkout failed.",
+        stripe_error:
+          stripeErrorMessage,
       },
       {
         status: 500,
