@@ -66,6 +66,25 @@ export function proxy(
     req.headers.get(
       "authorization"
     );
+  const authorizationHeaderPresent =
+    Boolean(
+      authorizationHeader
+    );
+  const bearerPrefixPresent =
+    authorizationHeader?.startsWith(
+      "Bearer"
+    ) || false;
+  const bearerTokenPresent =
+    authorizationHeader?.startsWith(
+      "Bearer "
+    ) || false;
+  const rejectionReason =
+    isProtectedApi &&
+    !bearerTokenPresent
+      ? authorizationHeaderPresent
+        ? "authorization_header_missing_bearer_token"
+        : "authorization_header_missing"
+      : null;
 
   if (
     pathname ===
@@ -74,22 +93,49 @@ export function proxy(
     console.log(
       "Lead Engine checkout proxy auth:",
       {
+        method:
+          req.method,
+        pathname,
         protected_api:
           isProtectedApi,
         authorization_header_present:
-          authorizationHeader?.startsWith(
-            "Bearer "
-          ) || false,
+          authorizationHeaderPresent,
+        bearer_prefix_present:
+          bearerPrefixPresent,
+        bearer_token_present:
+          bearerTokenPresent,
+        rejection_reason:
+          rejectionReason,
       }
     );
   }
 
   if (
     isProtectedApi &&
-    !authorizationHeader?.startsWith(
-      "Bearer "
-    )
+    !bearerTokenPresent
   ) {
+    if (
+      pathname ===
+      "/api/stripe/lead-engine-checkout"
+    ) {
+      console.log(
+        "Lead Engine checkout proxy 401:",
+        {
+          method:
+            req.method,
+          pathname,
+          protected_api:
+            isProtectedApi,
+          authorization_header_present:
+            authorizationHeaderPresent,
+          bearer_prefix_present:
+            bearerPrefixPresent,
+          rejection_reason:
+            rejectionReason,
+        }
+      );
+    }
+
     return addSecurityHeaders(
       NextResponse.json(
         {

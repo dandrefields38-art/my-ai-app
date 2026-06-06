@@ -36,7 +36,9 @@ export async function POST(
     console.log(
       "Lead Engine checkout route auth:",
       {
-        route_hit: true,
+        route_reached: true,
+        request_method:
+          req.method,
         authorization_header_present:
           authorizationHeader?.startsWith(
             "Bearer "

@@ -7,6 +7,19 @@ let sessionPromise:
   | null = null;
 let sessionExpiresAt = 0;
 
+export function clearCachedSession() {
+  sessionPromise = null;
+  sessionExpiresAt = 0;
+}
+
+if (typeof window !== "undefined") {
+  supabase.auth.onAuthStateChange(
+    () => {
+      clearCachedSession();
+    }
+  );
+}
+
 export async function getCachedSession(
   force = false
 ) {

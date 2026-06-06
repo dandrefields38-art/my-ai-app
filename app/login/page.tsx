@@ -158,5 +158,15 @@ function getRedirectTo() {
       ? next
       : "/chat";
 
-  return `${window.location.origin}${safeNext}`;
+  const callbackUrl =
+    new URL(
+      "/auth/callback",
+      window.location.origin
+    );
+  callbackUrl.searchParams.set(
+    "next",
+    safeNext
+  );
+
+  return callbackUrl.toString();
 }

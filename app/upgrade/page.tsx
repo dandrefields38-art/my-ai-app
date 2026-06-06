@@ -108,6 +108,20 @@ export default function UpgradePage() {
         } =
           await supabase.auth.getSession();
 
+        console.log(
+          "Lead Engine checkout session check:",
+          {
+            selected_plan:
+              selectedPlan,
+            session_exists:
+              Boolean(session),
+            token_exists:
+              Boolean(
+                session?.access_token
+              ),
+          }
+        );
+
         if (!session) {
           window.location.href =
             `/login?next=${encodeURIComponent(
@@ -117,6 +131,13 @@ export default function UpgradePage() {
           return;
         }
 
+        const checkoutEndpoint =
+          selectedPlan ===
+          "lead-engine-pro"
+            ? "/api/stripe/lead-engine-checkout"
+            : "/api/checkout";
+        const checkoutMethod =
+          "POST";
         const headers = {
           "Content-Type":
             "application/json",
@@ -133,6 +154,10 @@ export default function UpgradePage() {
           {
             selected_plan:
               selectedPlan,
+            endpoint:
+              checkoutEndpoint,
+            method:
+              checkoutMethod,
             session_exists:
               Boolean(session),
             token_exists:
@@ -147,13 +172,10 @@ export default function UpgradePage() {
 
         const res =
           await fetch(
-            selectedPlan ===
-              "lead-engine-pro"
-              ? "/api/stripe/lead-engine-checkout"
-              : "/api/checkout",
+            checkoutEndpoint,
             {
               method:
-                "POST",
+                checkoutMethod,
               headers,
               body:
                 JSON.stringify({}),
