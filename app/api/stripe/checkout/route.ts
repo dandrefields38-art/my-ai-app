@@ -1,4 +1,5 @@
 import Stripe from "stripe";
+import { NextResponse } from "next/server";
 import { requiredEnv } from "@/lib/env";
 import { requireApiAuth } from "@/lib/security";
 
@@ -142,36 +143,24 @@ export async function POST(
     error
   ) {
     console.error(
-      "PRO_AI_STRIPE_ERROR",
+      "FULL_STRIPE_ERROR",
       error
     );
 
-    const stripeErrorMessage =
-      error instanceof Error
-        ? error.message
-        : String(error);
-    const typedError =
-      error as {
-        type?: string;
-        code?: string;
-        raw?: unknown;
-      };
-
-    return Response.json(
+    return NextResponse.json(
       {
         error:
           "Checkout error",
         message:
-          stripeErrorMessage,
-        type:
-          typedError.type ||
-          null,
-        code:
-          typedError.code ||
-          null,
+          error instanceof Error
+            ? error.message
+            : String(error),
+        stack:
+          error instanceof Error
+            ? error.stack
+            : null,
         raw:
-          typedError.raw ||
-          null,
+          error,
       },
       {
         status: 500,

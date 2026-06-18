@@ -1,4 +1,5 @@
 import Stripe from "stripe";
+import { NextResponse } from "next/server";
 import { requiredEnv } from "@/lib/env";
 import { isActiveStripeStatus } from "@/lib/billing";
 import { requireApiAuth } from "@/lib/security";
@@ -510,68 +511,23 @@ export async function POST(
     });
   } catch (error) {
     console.error(
-      "STRIPE ERROR FULL",
+      "FULL_STRIPE_ERROR",
       error
     );
 
-    const stripeErrorMessage =
-      error instanceof Error
-        ? error.message
-        : String(error);
-    const typedError =
-      error as {
-        type?: string;
-        code?: string;
-        raw?: unknown;
-      };
-
-    console.log(
-      "LEAD ENGINE CHECKOUT STRIPE ERROR:",
-      stripeErrorMessage
-    );
-    console.log(
-      "LEAD ENGINE CHECKOUT STRIPE ERROR DETAILS:",
-      {
-        exact_stripe_error_message:
-          stripeErrorMessage,
-        exact_stripe_error_type:
-          typedError.type || null,
-        exact_stripe_error_code:
-          typedError.code || null,
-        exact_stripe_error_raw:
-          safeStringify(
-            typedError.raw
-          ),
-      }
-    );
-    console.log(
-      "LEAD ENGINE CHECKOUT RESPONSE STATUS:",
-      500
-    );
-
-    return Response.json(
+    return NextResponse.json(
       {
         error:
-          "Lead Engine checkout failed.",
+          "Checkout error",
         message:
-          stripeErrorMessage,
-        type:
-          typedError.type ||
-          null,
-        code:
-          typedError.code ||
-          null,
-        raw:
-          typedError.raw ||
-          null,
-        stripe_error:
-          stripeErrorMessage,
-        stripe_error_type:
-          typedError.type ||
-          null,
-        stripe_error_code:
-          typedError.code ||
-          null,
+          error instanceof Error
+            ? error.message
+            : String(error),
+        stack:
+          error instanceof Error
+            ? error.stack
+            : null,
+        raw: error,
       },
       {
         status: 500,
