@@ -2054,11 +2054,6 @@ export default function ChatPage() {
                       updatedMessages.length -
                         1
                     ].created_at,
-                  updated_at:
-                    updatedMessages[
-                      updatedMessages.length -
-                        1
-                    ].updated_at,
                 },
                 {
                   chat_id:
@@ -2070,8 +2065,6 @@ export default function ChatPage() {
                   content:
                     reply,
                   created_at:
-                    imageAssistantTimestamp,
-                  updated_at:
                     imageAssistantTimestamp,
                 },
               ]);
@@ -2417,8 +2410,8 @@ export default function ChatPage() {
           );
         }
 
-	        await supabase
-	          .from("messages")
+        await supabase
+          .from("messages")
           .insert([
             {
               chat_id:
@@ -2430,15 +2423,13 @@ export default function ChatPage() {
               role:
                 "user",
 
-	              content:
-	                userMessageContent,
+              content:
+                userMessageContent,
               created_at:
                 updatedMessages[
                   updatedMessages.length -
                     1
                 ].created_at,
-              updated_at:
-                persistedAt,
             },
 
             {
@@ -2455,10 +2446,8 @@ export default function ChatPage() {
                 assistantText,
               created_at:
                 assistantTimestamp,
-              updated_at:
-                persistedAt,
             },
-	          ]);
+          ]);
 
         if (
           persistedChatId &&

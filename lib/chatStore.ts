@@ -379,7 +379,7 @@ export const chatStore = {
       Promise.resolve(
         supabase
           .from("messages")
-          .select("role,content,created_at,updated_at")
+          .select("role,content,created_at")
           .eq("chat_id", chatId)
           .order("created_at", {
             ascending:
