@@ -41,6 +41,24 @@ const stripe =
     }
   );
 
+const normalizeAppUrl = (
+  value: string
+) => {
+  const trimmed =
+    value.trim();
+  const withScheme =
+    /^https?:\/\//i.test(
+      trimmed
+    )
+      ? trimmed
+      : `https://${trimmed}`;
+
+  return withScheme.replace(
+    /\/$/,
+    ""
+  );
+};
+
 const getCustomerId = (
   value:
     | string
@@ -229,14 +247,11 @@ export async function POST(
     const userId =
       auth.user!.id;
     const appUrl =
-      (
+      normalizeAppUrl(
         process.env.APP_URL ||
         process.env
           .NEXT_PUBLIC_APP_URL ||
         new URL(req.url).origin
-      ).replace(
-        /\/$/,
-        ""
       );
     const success_url =
       `${appUrl}/billing?checkout=lead-engine-success&session_id={CHECKOUT_SESSION_ID}`;
