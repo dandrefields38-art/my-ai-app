@@ -43,6 +43,9 @@ import {
   setCachedLeadSearch,
 } from "@/lib/leadEngineStore";
 import {
+  getBrowserTimeZone,
+} from "@/lib/dateTime";
+import {
   formatDateSeparatorLabel,
   getDateGroupKey,
   getMessageTimestamp,
@@ -121,10 +124,20 @@ export default function LeadEnginePage() {
     useState<
       Record<string, string>
     >({});
+  const [browserTimeZone, setBrowserTimeZone] =
+    useState<string | null>(
+      null
+    );
   const bottomRef =
     useRef<HTMLDivElement | null>(
       null
     );
+
+  useEffect(() => {
+    setBrowserTimeZone(
+      getBrowserTimeZone()
+    );
+  }, []);
 
   useEffect(() => {
     setMessages(
@@ -494,21 +507,29 @@ export default function LeadEnginePage() {
                         getMessageTimestamp(
                           message
                         );
-                      const dateKey =
-                        getDateGroupKey(
-                          timestamp
-                        );
+	                      const dateKey =
+	                        getDateGroupKey(
+	                          timestamp,
+                            {
+                              timeZone:
+                                browserTimeZone,
+                            }
+	                        );
                       const previous =
                         messages[
                           index - 1
                         ];
                       const previousKey =
                         previous
-                          ? getDateGroupKey(
-                              getMessageTimestamp(
-                                previous
-                              )
-                            )
+	                          ? getDateGroupKey(
+	                              getMessageTimestamp(
+	                                previous
+	                              ),
+                                {
+                                  timeZone:
+                                    browserTimeZone,
+                                }
+	                            )
                           : null;
                       const showDateDivider =
                         dateKey !==
@@ -520,10 +541,14 @@ export default function LeadEnginePage() {
                       >
                         {showDateDivider && (
                           <DateDivider
-                            label={formatDateSeparatorLabel(
-                              timestamp
-                            )}
-                          />
+	                            label={formatDateSeparatorLabel(
+	                              timestamp,
+                                {
+                                  timeZone:
+                                    browserTimeZone,
+                                }
+	                            )}
+	                          />
                         )}
                       <div
                         key={

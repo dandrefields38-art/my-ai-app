@@ -28,6 +28,10 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getAuthHeaders } from "@/lib/authClient";
 import {
+  formatDate,
+  formatDateTime,
+} from "@/lib/dateTime";
+import {
   getSettingsSnapshot,
   loadSettingsAccount,
   loadSettingsBilling,
@@ -1356,11 +1360,11 @@ function SecurityPanel({
             <InfoRow
               label="Last sign-in"
               value={
-                account.lastSignIn
-                  ? new Date(
-                      account.lastSignIn
-                    ).toLocaleString()
-                  : "Unavailable"
+	                account.lastSignIn
+	                  ? formatDateTime(
+	                      account.lastSignIn
+	                    )
+	                  : "Unavailable"
               }
             />
           </div>
@@ -1753,9 +1757,9 @@ function PlanCard({
       {trialEndsAt && (
         <p className="mt-3 text-sm text-emerald-100/75">
           Trial ends{" "}
-          {new Date(
-            trialEndsAt
-          ).toLocaleDateString()}
+	          {formatDate(
+	            trialEndsAt
+	          )}
         </p>
       )}
     </article>

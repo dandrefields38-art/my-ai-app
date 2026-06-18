@@ -22,6 +22,9 @@ import {
   refreshBillingState,
   type BillingState,
 } from "@/lib/billingStore";
+import {
+  formatDate,
+} from "@/lib/dateTime";
 
 export default function BillingPage() {
   const initialBilling =
@@ -402,10 +405,10 @@ export default function BillingPage() {
                 ?.leadEngineTrialEndsAt && (
                 <p className="mt-3 text-sm text-emerald-100/75">
                   Trial ends{" "}
-                  {new Date(
+                  {formatDate(
                     billing
                       .leadEngineTrialEndsAt
-                  ).toLocaleDateString()}
+                  )}
                 </p>
               )}
               {billing

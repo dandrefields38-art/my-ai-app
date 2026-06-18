@@ -12,6 +12,12 @@ export type Lead = {
   review_count?: number;
   lead_score: number;
   score_reason: string;
+  confidence_note?: string;
+  confidence_level?:
+    | "High"
+    | "Medium"
+    | "Low";
+  confidence_reasons?: string[];
 };
 
 export type LeadRequestAnalysis = {
@@ -24,6 +30,20 @@ export type LeadRequestAnalysis = {
   isRandomRequest: boolean;
   needsClarification: boolean;
   clarificationQuestion: string;
+  structuredIntent?: StructuredLeadExtraction;
+};
+
+export type StructuredLeadExtraction = {
+  industry: string;
+  location: string;
+  requestedCount: number | null;
+  businessType: string;
+  targetCustomer: string;
+  requiredFields: string[];
+  excludedTerms: string[];
+  preferredSignals: string[];
+  searchGoal: string;
+  confidence: number;
 };
 
 type SearchItem = {
@@ -48,6 +68,18 @@ type SearchPlan = {
   query: string;
   location: string;
   industry: string;
+};
+
+type LeadSearchIntent = Partial<
+  StructuredLeadExtraction
+>;
+
+type LeadScoreContext = {
+  requestedIndustry: string;
+  requestedLocation: string;
+  searchGoal: string;
+  source: LeadSource;
+  dedupeKey: string;
 };
 
 const maxRequestedLeads =
@@ -745,28 +777,288 @@ const isLikelyBusiness = (
   );
 };
 
-const scoreLead = (
+const buildLeadConfidenceNote = (
   lead: Omit<
     Lead,
-    "lead_score" | "score_reason"
+    | "lead_score"
+    | "score_reason"
+    | "confidence_note"
+    | "confidence_level"
+    | "confidence_reasons"
   >
 ) => {
-  let score = 45;
-  const reasons = [];
+  const signals: string[] =
+    [];
+  const gaps: string[] =
+    [];
+  const rating =
+    Number(
+      lead.google_rating || 0
+    );
 
   if (lead.phone) {
-    score += 18;
-    reasons.push("has a direct phone number");
+    signals.push("phone");
+  } else {
+    gaps.push("phone");
   }
 
   if (lead.website) {
+    signals.push("website");
+  } else {
+    gaps.push("website");
+  }
+
+  if (rating >= 4) {
+    signals.push(
+      `${rating.toFixed(1)} rating`
+    );
+  }
+
+  if (
+    typeof lead.review_count ===
+      "number" &&
+    lead.review_count > 0
+  ) {
+    signals.push(
+      `${lead.review_count} reviews`
+    );
+  }
+
+  if (lead.address) {
+    signals.push("address");
+  } else {
+    gaps.push("address");
+  }
+
+  if (lead.industry) {
+    signals.push(
+      `${lead.industry} match`
+    );
+  }
+
+  if (
+    lead.city ||
+    lead.state ||
+    lead.address
+  ) {
+    signals.push("location match");
+  }
+
+  const confidence =
+    signals.length >= 5
+      ? "High"
+      : signals.length >= 3
+        ? "Medium"
+        : "Low";
+  const signalText =
+    signals.length
+      ? signals
+          .slice(0, 5)
+          .join(", ")
+      : "limited public data";
+  const gapText =
+    gaps.length
+      ? ` Missing ${gaps
+          .slice(0, 2)
+          .join(" and ")}.`
+      : "";
+
+  return `${confidence} confidence based on ${signalText}.${gapText}`;
+};
+
+const normalizeMatchText = (
+  value = ""
+) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+const hasTextMatch = (
+  haystack: string,
+  needle: string
+) => {
+  const normalizedNeedle =
+    normalizeMatchText(needle);
+
+  if (!normalizedNeedle) {
+    return false;
+  }
+
+  return normalizeMatchText(
+    haystack
+  ).includes(normalizedNeedle);
+};
+
+const getWebsiteQuality = (
+  website = "",
+  name = ""
+) => {
+  if (!website) {
+    return {
+      score: 0,
+      reason: "",
+    };
+  }
+
+  const domain =
+    getDomain(website);
+  const nameWords =
+    normalizeMatchText(name)
+      .split(" ")
+      .filter(
+        (word) =>
+          word.length > 2
+      );
+  const domainMatchesName =
+    nameWords.some((word) =>
+      domain.includes(word)
+    );
+
+  if (domainMatchesName) {
+    return {
+      score: 8,
+      reason:
+        "Website domain appears related to business name",
+    };
+  }
+
+  return {
+    score: 5,
+    reason:
+      "Website detected",
+  };
+};
+
+const getConfidenceLevel = (
+  score: number,
+  reasons: string[]
+): "High" | "Medium" | "Low" => {
+  if (
+    score >= 82 &&
+    reasons.length >= 6
+  ) {
+    return "High";
+  }
+
+  if (
+    score >= 62 &&
+    reasons.length >= 3
+  ) {
+    return "Medium";
+  }
+
+  return "Low";
+};
+
+const scoreLead = (
+  lead: Omit<
+    Lead,
+    | "lead_score"
+    | "score_reason"
+    | "confidence_note"
+    | "confidence_level"
+    | "confidence_reasons"
+  >,
+  context: LeadScoreContext
+) => {
+  let score = 30;
+  const reasons: string[] =
+    [];
+  const searchableText =
+    [
+      lead.name,
+      lead.industry,
+      lead.address,
+      lead.city,
+      lead.state,
+      lead.website,
+    ]
+      .filter(Boolean)
+      .join(" ");
+  const requestedIndustry =
+    context.requestedIndustry ||
+    lead.industry;
+  const requestedLocation =
+    context.requestedLocation;
+
+  if (
+    requestedIndustry &&
+    (
+      hasTextMatch(
+        lead.industry,
+        requestedIndustry
+      ) ||
+      hasTextMatch(
+        searchableText,
+        requestedIndustry
+      )
+    )
+  ) {
     score += 14;
-    reasons.push("has a business website");
+    reasons.push(
+      `Exact ${requestedIndustry} industry match`
+    );
+  } else if (lead.industry) {
+    score += 6;
+    reasons.push(
+      `${lead.industry} category match`
+    );
+  }
+
+  if (
+    requestedLocation &&
+    (
+      hasTextMatch(
+        lead.city || "",
+        requestedLocation
+      ) ||
+      hasTextMatch(
+        lead.address || "",
+        requestedLocation
+      ) ||
+      hasTextMatch(
+        `${lead.city || ""} ${lead.state || ""}`,
+        requestedLocation
+      )
+    )
+  ) {
+    score += 12;
+    reasons.push(
+      "Located in requested city or area"
+    );
+  } else if (
+    requestedLocation &&
+    context.source === "places"
+  ) {
+    score += 6;
+    reasons.push(
+      "Returned from requested location search"
+    );
+  }
+
+  if (lead.phone) {
+    score += 18;
+    reasons.push("Phone detected");
+  }
+
+  const websiteQuality =
+    getWebsiteQuality(
+      lead.website,
+      lead.name
+    );
+
+  if (websiteQuality.score) {
+    score +=
+      websiteQuality.score;
+    reasons.push(
+      websiteQuality.reason
+    );
   }
 
   if (lead.email) {
     score += 12;
-    reasons.push("has an email");
+    reasons.push("Email detected");
   }
 
   const rating =
@@ -774,10 +1066,14 @@ const scoreLead = (
 
   if (rating >= 4.5) {
     score += 10;
-    reasons.push("has a strong rating");
+    reasons.push(
+      `Rating ${rating.toFixed(1)}`
+    );
   } else if (rating >= 4) {
     score += 7;
-    reasons.push("has a good rating");
+    reasons.push(
+      `Rating ${rating.toFixed(1)}`
+    );
   }
 
   if (
@@ -785,29 +1081,144 @@ const scoreLead = (
       "number" &&
     lead.review_count >= 25
   ) {
-    score += 6;
-    reasons.push("has meaningful review volume");
+    const reviewScore =
+      lead.review_count >= 100
+        ? 8
+        : 6;
+    score += reviewScore;
+    reasons.push(
+      `${lead.review_count} reviews`
+    );
+  } else if (
+    typeof lead.review_count ===
+      "number" &&
+    lead.review_count > 0
+  ) {
+    score += 3;
+    reasons.push(
+      `${lead.review_count} reviews`
+    );
   }
 
   if (lead.address) {
-    score += 5;
-    reasons.push("has a verified address");
+    const hasCityOrState =
+      Boolean(
+        lead.city || lead.state
+      );
+
+    score += hasCityOrState
+      ? 7
+      : 5;
+    reasons.push(
+      hasCityOrState
+        ? "Complete address with city/state"
+        : "Address detected"
+    );
   }
+
+  if (
+    context.source === "places"
+  ) {
+    score += 6;
+    reasons.push(
+      "Google Places result"
+    );
+  } else {
+    score += 3;
+    reasons.push(
+      "Organic search result"
+    );
+  }
+
+  if (context.dedupeKey) {
+    const dedupeReason =
+      getDomain(lead.website)
+        ? "Normalized by website domain"
+        : lead.phone
+          ? "Normalized by phone number"
+          : "Normalized by business name and address";
+    score += 4;
+    reasons.push(dedupeReason);
+  }
+
+  if (context.searchGoal) {
+    const goalText =
+      normalizeMatchText(
+        context.searchGoal
+      );
+
+    if (
+      goalText &&
+      (
+        hasTextMatch(
+          searchableText,
+          goalText
+        ) ||
+        hasTextMatch(
+          `${lead.industry} ${lead.name}`,
+          context.searchGoal
+        )
+      )
+    ) {
+      score += 5;
+      reasons.push(
+        `Relevant to ${context.searchGoal}`
+      );
+    } else if (
+      lead.phone ||
+      lead.website
+    ) {
+      score += 2;
+      reasons.push(
+        `Contactable for ${context.searchGoal}`
+      );
+    }
+  }
+
+  const finalScore =
+    Math.min(
+      score,
+      98
+    );
+  const confidenceLevel =
+    getConfidenceLevel(
+      finalScore,
+      reasons
+    );
 
   return {
     lead_score:
-      Math.min(score, 98),
+      finalScore,
     score_reason:
       reasons.length
-        ? `Strong fit because it ${reasons.join(", ")}.`
+        ? `${confidenceLevel} confidence because it has ${reasons
+            .slice(0, 6)
+            .join(", ")}.`
         : "Potential fit based on category and location match.",
+    confidence_note:
+      buildLeadConfidenceNote(
+        lead
+      ),
+    confidence_level:
+      confidenceLevel,
+    confidence_reasons:
+      reasons,
   };
 };
 
 const normalizeLead = (
   item: SearchItem,
   industry: string,
-  fallbackLocation: string
+  fallbackLocation: string,
+  context: Omit<
+    LeadScoreContext,
+    | "dedupeKey"
+    | "requestedIndustry"
+    | "requestedLocation"
+  > & {
+    requestedIndustry: string;
+    requestedLocation: string;
+  }
 ): Lead => {
   const website =
     item.website ||
@@ -847,9 +1258,17 @@ const normalizeLead = (
         item.reviews ||
         item.reviewCount ||
         undefined,
-    };
+	    };
+  const dedupeKey =
+    getLeadKey(baseLead);
   const score =
-    scoreLead(baseLead);
+    scoreLead(
+      baseLead,
+      {
+        ...context,
+        dedupeKey,
+      }
+    );
 
   return {
     ...baseLead,
@@ -923,9 +1342,125 @@ const buildIndustryVariants = (
   ]);
 };
 
+const normalizeSearchTerms = (
+  values: unknown
+) =>
+  Array.isArray(values)
+    ? unique(
+        values
+          .map((value) =>
+            String(value || "")
+          )
+          .filter(Boolean)
+      ).slice(0, 8)
+    : [];
+
+const buildIntentSearchTerms = (
+  intent?: LeadSearchIntent
+) => {
+  if (!intent) {
+    return [];
+  }
+
+  const requiredFields =
+    normalizeSearchTerms(
+      intent.requiredFields
+    );
+  const preferredSignals =
+    normalizeSearchTerms(
+      intent.preferredSignals
+    );
+  const targetCustomer =
+    String(
+      intent.targetCustomer || ""
+    ).trim();
+  const searchGoal =
+    String(
+      intent.searchGoal || ""
+    ).trim();
+  const fieldTerms =
+    requiredFields.map(
+      (field) => {
+        const normalized =
+          field.toLowerCase();
+
+        if (
+          normalized.includes(
+            "phone"
+          )
+        ) {
+          return "phone number";
+        }
+
+        if (
+          normalized.includes(
+            "website"
+          )
+        ) {
+          return "official website";
+        }
+
+        if (
+          normalized.includes(
+            "email"
+          )
+        ) {
+          return "email";
+        }
+
+        if (
+          normalized.includes(
+            "address"
+          )
+        ) {
+          return "address";
+        }
+
+        return field;
+      }
+    );
+
+  return unique([
+    ...fieldTerms,
+    ...preferredSignals,
+    targetCustomer,
+    searchGoal,
+  ]).slice(0, 8);
+};
+
+const hasExcludedTerm = (
+  item: SearchItem,
+  excludedTerms: string[]
+) => {
+  if (!excludedTerms.length) {
+    return false;
+  }
+
+  const haystack =
+    [
+      item.title,
+      item.name,
+      item.snippet,
+      item.link,
+      item.website,
+      item.address,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+  return excludedTerms.some(
+    (term) =>
+      haystack.includes(
+        term.toLowerCase()
+      )
+  );
+};
+
 const buildSearchPlans = (
   industry: string,
-  location: string
+  location: string,
+  intent?: LeadSearchIntent
 ) => {
   const locationVariants =
     buildLocationVariants(
@@ -935,6 +1470,14 @@ const buildSearchPlans = (
     buildIndustryVariants(
       industry
     );
+  const intentTerms =
+    buildIntentSearchTerms(
+      intent
+    );
+  const intentQuerySuffix =
+    intentTerms.length
+      ? intentTerms.join(" ")
+      : "";
   const plans: SearchPlan[] =
     [];
 
@@ -944,6 +1487,7 @@ const buildSearchPlans = (
         [
           nextIndustry,
           nextLocation,
+          intentQuerySuffix,
         ]
           .filter(Boolean)
           .join(" ");
@@ -979,7 +1523,7 @@ const buildSearchPlans = (
           source:
             "organic",
           query:
-            `${base} business phone address official website`,
+            `${base} ${intentQuerySuffix} business phone address official website`,
           location:
             nextLocation ||
             location,
@@ -993,7 +1537,7 @@ const buildSearchPlans = (
           source:
             "organic",
           query:
-            `${base} contact phone website company`,
+            `${base} ${intentQuerySuffix} contact phone website company`,
           location:
             nextLocation ||
             location,
@@ -1082,7 +1626,8 @@ const fetchSerper = async (
 };
 
 export async function getLeads(
-  query: string
+  query: string,
+  intent?: LeadSearchIntent
 ) {
   try {
     const apiKey =
@@ -1093,19 +1638,77 @@ export async function getLeads(
     }
 
     const count =
-      parseRequestedLeadCount(query);
+      intent?.requestedCount
+        ? Math.min(
+            Math.max(
+              Number(
+                intent.requestedCount
+              ),
+              1
+            ),
+            maxRequestedLeads
+          )
+        : parseRequestedLeadCount(
+            query
+          );
     const industry =
+      String(
+        intent?.industry ||
+          intent?.businessType ||
+          ""
+      ).trim() ||
       parseLeadIndustry(query) ||
       "Business";
     const location =
+      String(
+        intent?.location || ""
+      ).trim() ||
       parseLeadLocation(query);
+    const excludedTerms =
+      normalizeSearchTerms(
+        intent?.excludedTerms
+      );
     const deduped =
       new Map<string, Lead>();
     const plans =
       buildSearchPlans(
         industry,
-        location
+        location,
+        intent
       );
+
+    console.log(
+      "LEAD_ENGINE_SEARCH_PLAN:",
+      {
+        requestedCount:
+          count,
+        industry,
+        location,
+        requiredFields:
+          normalizeSearchTerms(
+            intent?.requiredFields
+          ),
+        excludedTerms,
+        preferredSignals:
+          normalizeSearchTerms(
+            intent?.preferredSignals
+          ),
+        searchGoal:
+          intent?.searchGoal ||
+          "",
+        planCount:
+          plans.length,
+        sampleQueries:
+          plans
+            .slice(0, 5)
+            .map((plan) => ({
+              source:
+                plan.source,
+              query:
+                plan.query,
+            })),
+      }
+    );
 
     for (const plan of plans) {
       for (
@@ -1135,16 +1738,34 @@ export async function getLeads(
 
         items
           .filter(
+            (item) =>
+              !hasExcludedTerm(
+                item,
+                excludedTerms
+              )
+          )
+          .filter(
             isLikelyBusiness
           )
           .forEach((item) => {
-            const lead =
-              normalizeLead(
-                item,
-                plan.industry,
-                plan.location ||
-                  location
-              );
+	            const lead =
+	              normalizeLead(
+	                item,
+	                plan.industry,
+	                plan.location ||
+	                  location,
+                {
+                  requestedIndustry:
+                    industry,
+                  requestedLocation:
+                    location,
+                  searchGoal:
+                    intent?.searchGoal ||
+                    "",
+                  source:
+                    plan.source,
+                }
+	              );
             const key =
               getLeadKey(
                 lead
@@ -1172,7 +1793,20 @@ export async function getLeads(
 
     return Array.from(
       deduped.values()
-    ).slice(0, count);
+    )
+      .sort(
+        (
+          a,
+          b
+        ) =>
+          Number(
+            b.lead_score || 0
+          ) -
+            Number(
+              a.lead_score || 0
+            )
+      )
+      .slice(0, count);
   } catch (err) {
     console.log(
       "LEADS ERROR:",

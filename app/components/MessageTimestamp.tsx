@@ -2,9 +2,13 @@
 
 import {
   memo,
+  useEffect,
   useState,
 } from "react";
 
+import {
+  getBrowserTimeZone,
+} from "@/lib/dateTime";
 import {
   formatFullMessageStamp,
   formatMessageStamp,
@@ -22,9 +26,29 @@ const MessageTimestamp = memo(
   }) {
     const [showFull, setShowFull] =
       useState(false);
+    const [timeZone, setTimeZone] =
+      useState<string | null>(
+        null
+      );
+
+    useEffect(() => {
+      setTimeZone(
+        getBrowserTimeZone()
+      );
+    }, []);
+
+    const formatOptions = {
+      timeZone,
+    };
     const full =
       formatFullMessageStamp(
-        timestamp
+        timestamp,
+        formatOptions
+      );
+    const stamp =
+      formatMessageStamp(
+        timestamp,
+        formatOptions
       );
 
     return (
@@ -55,14 +79,10 @@ const MessageTimestamp = memo(
         <span className="md:hidden">
           {showFull
             ? full
-            : formatMessageStamp(
-                timestamp
-              )}
+            : stamp}
         </span>
         <span className="hidden md:inline">
-          {formatMessageStamp(
-            timestamp
-          )}
+          {stamp}
         </span>
       </button>
     );

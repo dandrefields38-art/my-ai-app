@@ -36,6 +36,12 @@ import {
   chatStore,
   type ChatSummary,
 } from "@/lib/chatStore";
+import {
+  formatActivityDate,
+  formatDateTime,
+  formatRelativeDateGroup,
+  getTimestampDate,
+} from "@/lib/dateTime";
 import { supabase } from "@/lib/supabase";
 
 const workspaceRoutes = [
@@ -63,125 +69,32 @@ const prefetchRoutes = [
   "/leads",
 ];
 
-const chatTimeFormatter =
-  new Intl.DateTimeFormat(
-    "en-US",
-    {
-      hour: "numeric",
-      minute: "2-digit",
-    }
-  );
-
-const chatDateFormatter =
-  new Intl.DateTimeFormat(
-    "en-US",
-    {
-      month: "short",
-      day: "numeric",
-    }
-  );
-
-const chatFullDateFormatter =
-  new Intl.DateTimeFormat(
-    "en-US",
-    {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    }
-  );
-
-const startOfDay = (
-  date: Date
-) =>
-  new Date(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate()
-  );
-
-const getChatActivityDate = (
+const getChatActivityTimestamp = (
   chat: Chat
 ) =>
-  new Date(
-    chat.updated_at ||
-      chat.created_at ||
-      0
-  );
+  chat.updated_at ||
+  chat.created_at ||
+  "0";
 
 const getChatGroupLabel = (
   chat: Chat
-) => {
-  const activity =
-    getChatActivityDate(chat);
-  const today =
-    startOfDay(new Date());
-  const activityDay =
-    startOfDay(activity);
-  const diffDays =
-    Math.floor(
-      (today.getTime() -
-        activityDay.getTime()) /
-        86_400_000
-    );
-
-  if (diffDays <= 0) {
-    return "Today";
-  }
-
-  if (diffDays === 1) {
-    return "Yesterday";
-  }
-
-  if (diffDays <= 7) {
-    return "Last 7 Days";
-  }
-
-  if (diffDays <= 30) {
-    return "Last 30 Days";
-  }
-
-  return "Older";
-};
+) =>
+  formatRelativeDateGroup(
+    getChatActivityTimestamp(chat)
+  );
 
 const formatChatActivity = (
   chat: Chat
-) => {
-  const activity =
-    getChatActivityDate(chat);
-  const today =
-    startOfDay(new Date());
-  const activityDay =
-    startOfDay(activity);
-  const diffDays =
-    Math.floor(
-      (today.getTime() -
-        activityDay.getTime()) /
-        86_400_000
-    );
-
-  if (diffDays <= 0) {
-    return chatTimeFormatter.format(
-      activity
-    );
-  }
-
-  if (diffDays === 1) {
-    return "Yesterday";
-  }
-
-  return chatDateFormatter.format(
-    activity
+) =>
+  formatActivityDate(
+    getChatActivityTimestamp(chat)
   );
-};
 
 const formatFullChatActivity = (
   chat: Chat
 ) =>
-  chatFullDateFormatter.format(
-    getChatActivityDate(chat)
+  formatDateTime(
+    getChatActivityTimestamp(chat)
   );
 
 const hasChatActivity = (
@@ -343,11 +256,15 @@ export default function AppShell({
                 a,
                 b
               ) =>
-                getChatActivityDate(
-                  b
+                getTimestampDate(
+                  getChatActivityTimestamp(
+                    b
+                  )
                 ).getTime() -
-                getChatActivityDate(
-                  a
+                getTimestampDate(
+                  getChatActivityTimestamp(
+                    a
+                  )
                 ).getTime()
             );
         const groups =

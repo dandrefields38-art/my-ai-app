@@ -46,6 +46,9 @@ import {
   type ChatSummary,
 } from "@/lib/chatStore";
 import {
+  getBrowserTimeZone,
+} from "@/lib/dateTime";
+import {
   formatDateSeparatorLabel,
   getDateGroupKey,
   getMessageTimestamp,
@@ -890,6 +893,10 @@ export default function ChatPage() {
     useState<string | null>(
       null
     );
+  const [browserTimeZone, setBrowserTimeZone] =
+    useState<string | null>(
+      null
+    );
 
   const [selectedFile, setSelectedFile] =
     useState<File | null>(
@@ -925,6 +932,12 @@ export default function ChatPage() {
       }
     );
   }, [messages]);
+
+  useEffect(() => {
+    setBrowserTimeZone(
+      getBrowserTimeZone()
+    );
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -2113,10 +2126,10 @@ export default function ChatPage() {
 	                    message:
 	                      text,
 
-	                    messages:
-	                      updatedMessages.slice(
-	                        -10
-	                      ),
+		                    messages:
+		                      updatedMessages.slice(
+		                        -64
+		                      ),
 
 	                    userId,
 
@@ -2736,21 +2749,29 @@ export default function ChatPage() {
                     getMessageTimestamp(
                       message
                     );
-                  const dateKey =
-                    getDateGroupKey(
-                      timestamp
-                    );
+	                  const dateKey =
+	                    getDateGroupKey(
+	                      timestamp,
+                        {
+                          timeZone:
+                            browserTimeZone,
+                        }
+	                    );
                   const previous =
                     messages[
                       i - 1
                     ];
                   const previousKey =
                     previous
-                      ? getDateGroupKey(
-                          getMessageTimestamp(
-                            previous
-                          )
-                        )
+	                      ? getDateGroupKey(
+	                          getMessageTimestamp(
+	                            previous
+	                          ),
+                            {
+                              timeZone:
+                                browserTimeZone,
+                            }
+	                        )
                       : null;
                   const showDateDivider =
                     dateKey !==
@@ -2776,11 +2797,15 @@ export default function ChatPage() {
                     key={`${i}-${dateKey}`}
                   >
                     {showDateDivider && (
-                      <DateDivider
-                        label={formatDateSeparatorLabel(
-                          timestamp
-                        )}
-                      />
+	                      <DateDivider
+	                        label={formatDateSeparatorLabel(
+	                          timestamp,
+                            {
+                              timeZone:
+                                browserTimeZone,
+                            }
+	                        )}
+	                      />
                     )}
 
                   <MotionMessage

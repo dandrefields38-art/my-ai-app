@@ -7,12 +7,21 @@ import {
 import type {
   Lead,
   LeadRequestAnalysis,
+  StructuredLeadExtraction,
 } from "@/lib/leads";
 import {
   getBillingStatus,
   getLeadEngineEntitlements,
 } from "@/lib/billing";
 import { requireApiAuth } from "@/lib/security";
+import { requiredEnv } from "@/lib/env";
+import OpenAI from "openai";
+
+const openai =
+  new OpenAI({
+    apiKey:
+      requiredEnv.openaiApiKey(),
+  });
 
 type LeadEngineMessage = {
   role: "user" | "assistant";
@@ -58,6 +67,231 @@ const shouldExitLeadMode = (
   /\b(exit|leave|cancel|stop)\s+(lead mode|lead engine|leads?)\b/i.test(
     text
   );
+
+const asString = (
+  value: unknown
+) =>
+  typeof value === "string"
+    ? value.trim()
+    : "";
+
+const asStringArray = (
+  value: unknown
+) =>
+  Array.isArray(value)
+    ? value
+        .map(asString)
+        .filter(Boolean)
+        .slice(0, 8)
+    : [];
+
+const clampConfidence = (
+  value: unknown
+) => {
+  const confidence =
+    Number(value);
+
+  if (
+    !Number.isFinite(
+      confidence
+    )
+  ) {
+    return 0;
+  }
+
+  return Math.min(
+    1,
+    Math.max(
+      0,
+      confidence
+    )
+  );
+};
+
+const sanitizeStructuredExtraction =
+  (
+    value: any
+  ): StructuredLeadExtraction => ({
+    industry:
+      asString(value?.industry),
+    location:
+      asString(value?.location),
+    requestedCount:
+      Number.isFinite(
+        Number(
+          value?.requestedCount
+        )
+      )
+        ? Math.round(
+            Number(
+              value.requestedCount
+            )
+          )
+        : null,
+    businessType:
+      asString(
+        value?.businessType
+      ),
+    targetCustomer:
+      asString(
+        value?.targetCustomer
+      ),
+    requiredFields:
+      asStringArray(
+        value?.requiredFields
+      ),
+    excludedTerms:
+      asStringArray(
+        value?.excludedTerms
+      ),
+    preferredSignals:
+      asStringArray(
+        value?.preferredSignals
+      ),
+    searchGoal:
+      asString(
+        value?.searchGoal
+      ),
+    confidence:
+      clampConfidence(
+        value?.confidence
+      ),
+  });
+
+const extractStructuredLeadIntent =
+  async (
+    message: string
+  ) => {
+    try {
+      const completion =
+        await openai.chat.completions.create(
+          {
+            model:
+              "gpt-4o-mini",
+            temperature:
+              0,
+            response_format: {
+              type:
+                "json_object",
+            },
+            messages: [
+              {
+                role:
+                  "system",
+                content:
+                  [
+                    "Extract structured lead-search intent from the user query.",
+                    "Return only JSON with keys: industry, location, requestedCount, businessType, targetCustomer, requiredFields, excludedTerms, preferredSignals, searchGoal, confidence.",
+                    "Normalize obvious locations when safe, e.g. Brooklyn -> Brooklyn, NY.",
+                    "Use requiredFields for explicitly requested contact/data fields such as phone, email, website, address, owner, decision maker.",
+                    "Use preferredSignals for desired quality signals such as high rating, many reviews, official website, local, established.",
+                    "Use excludedTerms for explicitly unwanted categories.",
+                    "Use searchGoal for prospecting, outreach, acquisition, investment, hiring, research, or sales.",
+                    "Do not invent specific leads, names, emails, phone numbers, or facts.",
+                    "If a field is unknown, use an empty string, empty array, null requestedCount, and lower confidence.",
+                  ].join(" "),
+              },
+              {
+                role:
+                  "user",
+                content:
+                  message.slice(
+                    0,
+                    1200
+                  ),
+              },
+            ],
+          }
+        );
+      const raw =
+        completion.choices[0]
+          ?.message?.content ||
+        "{}";
+
+      return sanitizeStructuredExtraction(
+        JSON.parse(raw)
+      );
+    } catch (error) {
+      console.log(
+        "LEAD_ENGINE_STRUCTURED_EXTRACTION_FAILED:",
+        error instanceof Error
+          ? error.message
+          : String(error)
+      );
+      return null;
+    }
+  };
+
+const mergeUnique = (
+  first: string[],
+  second: string[]
+) =>
+  Array.from(
+    new Set([
+      ...first,
+      ...second,
+    ].filter(Boolean))
+  );
+
+const applyStructuredExtraction =
+  (
+    analysis: LeadRequestAnalysis,
+    extraction: StructuredLeadExtraction | null
+  ): LeadRequestAnalysis => {
+    if (
+      !extraction ||
+      extraction.confidence < 0.35
+    ) {
+      return analysis;
+    }
+
+    const industry =
+      extraction.industry ||
+      extraction.businessType ||
+      analysis.industry;
+    const location =
+      extraction.location ||
+      analysis.location;
+    const count =
+      extraction.requestedCount ||
+      analysis.count;
+    const requiredContactDetails =
+      mergeUnique(
+        analysis.requiredContactDetails,
+        extraction.requiredFields
+      );
+    const missingIndustry =
+      !industry &&
+      !analysis.isRandomRequest;
+    const missingLocation =
+      !location;
+    const clarificationQuestion =
+      missingIndustry &&
+      missingLocation
+        ? `What industry and city, state, or ZIP code should I search? Popular categories: ${popularLeadCategories.join(", ")}.`
+        : missingIndustry
+          ? `What industry or business type should I search? Popular categories: ${popularLeadCategories.join(", ")}.`
+          : missingLocation
+            ? `What city, state, or ZIP code should I search for ${industry} leads?`
+            : "";
+
+    return {
+      ...analysis,
+      count,
+      industry,
+      location,
+      businessGoal:
+        extraction.searchGoal ||
+        analysis.businessGoal,
+      requiredContactDetails,
+      needsClarification:
+        missingIndustry ||
+        missingLocation,
+      clarificationQuestion,
+      structuredIntent:
+        extraction,
+    };
+  };
 
 const getPreviousLeadAnalysis = (
   messages: LeadEngineMessage[]
@@ -333,9 +567,16 @@ export async function POST(
           ? messages
           : []
       );
-    const currentAnalysis =
-      analyzeLeadRequest(
+    const structuredExtraction =
+      await extractStructuredLeadIntent(
         messageText
+      );
+    const currentAnalysis =
+      applyStructuredExtraction(
+        analyzeLeadRequest(
+          messageText
+        ),
+        structuredExtraction
       );
     const analysis =
       previousAnalysis
@@ -345,6 +586,33 @@ export async function POST(
             messageText
           )
         : currentAnalysis;
+    console.log(
+      "LEAD_ENGINE_PARSED_INTENT:",
+      {
+        message:
+          messageText.slice(
+            0,
+            180
+          ),
+        structuredExtraction,
+        finalAnalysis: {
+          industry:
+            analysis.industry,
+          location:
+            analysis.location,
+          requestedCount:
+            analysis.count,
+          businessGoal:
+            analysis.businessGoal,
+          requiredContactDetails:
+            analysis
+              .requiredContactDetails,
+          needsClarification:
+            analysis
+              .needsClarification,
+        },
+      }
+    );
 
     const cappedAnalysis = {
       ...analysis,
@@ -355,6 +623,52 @@ export async function POST(
             .maxLeadResults
         ),
     };
+    const searchIntent = {
+      ...cappedAnalysis
+        .structuredIntent,
+      industry:
+        cappedAnalysis.industry,
+      location:
+        cappedAnalysis.location,
+      requestedCount:
+        cappedAnalysis.count,
+      requiredFields:
+        cappedAnalysis
+          .requiredContactDetails,
+      searchGoal:
+        cappedAnalysis
+          .businessGoal,
+    };
+
+    console.log(
+      "LEAD_ENGINE_FINAL_PLAN:",
+      {
+        requestedCount:
+          analysis.count,
+        entitlementCountLimit:
+          entitlements
+            .maxLeadResults,
+        effectiveCount:
+          cappedAnalysis.count,
+        industry:
+          cappedAnalysis.industry,
+        location:
+          cappedAnalysis.location,
+        requiredFields:
+          cappedAnalysis
+            .requiredContactDetails,
+        excludedTerms:
+          searchIntent.excludedTerms ||
+          [],
+        preferredSignals:
+          searchIntent
+            .preferredSignals ||
+          [],
+        searchGoal:
+          cappedAnalysis
+            .businessGoal,
+      }
+    );
 
     if (
       cappedAnalysis
@@ -377,7 +691,8 @@ export async function POST(
       await getLeads(
         buildLeadQuery(
           cappedAnalysis
-        )
+        ),
+        searchIntent
       );
 
     if (!leads.length) {

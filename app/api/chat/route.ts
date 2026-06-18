@@ -18,6 +18,11 @@ type ChatMode =
   | "file_missing"
   | "normal";
 
+const RECENT_CONTEXT_MESSAGES =
+  16;
+const SUMMARY_CONTEXT_MESSAGES =
+  48;
+
 const getCurrentDateContext = () => {
   const now =
     new Date();
@@ -106,6 +111,40 @@ const detectChatMode = ({
   return "normal";
 };
 
+const getMaxOutputTokens = (
+  text: string,
+  hasPdf: boolean
+) => {
+  const normalized =
+    text.toLowerCase();
+  const wantsDeepAnswer =
+    hasPdf ||
+    /\b(analy[sz]e|analysis|debug|troubleshoot|fix|audit|review|explain in detail|deep dive|strategy|plan|roadmap|legal|contract|policy|compliance|architecture|refactor|implement|code|coding|typescript|javascript|react|next\\.js|supabase|stripe|business strategy|go-to-market|marketing strategy|financial model|long[- ]form|comprehensive|detailed|thorough)\b/i.test(
+      normalized
+    );
+  const wantsLongAnswer =
+    /\b(write|draft|create|generate|outline)\b/i.test(
+      normalized
+    ) &&
+    /\b(report|proposal|document|essay|script|playbook|guide|brief|plan)\b/i.test(
+      normalized
+    );
+
+  if (wantsDeepAnswer && wantsLongAnswer) {
+    return 2400;
+  }
+
+  if (wantsDeepAnswer) {
+    return 1800;
+  }
+
+  if (wantsLongAnswer) {
+    return 1500;
+  }
+
+  return 700;
+};
+
 const getStoredMessageText = (
   content: unknown
 ) => {
@@ -170,6 +209,134 @@ const getStoredMessageText = (
   }
 
   return raw;
+};
+
+const normalizeContextMessage = (
+  message: any
+) => {
+  const role =
+    message?.role ===
+      "assistant" ||
+    message?.role === "user"
+      ? message.role
+      : null;
+
+  if (!role) {
+    return null;
+  }
+
+  const content =
+    getStoredMessageText(
+      message.content
+    )
+      .replace(/\s+/g, " ")
+      .trim();
+
+  if (!content) {
+    return null;
+  }
+
+  return {
+    role,
+    content,
+  };
+};
+
+const buildConversationSummary = (
+  messages: any[]
+) => {
+  const olderMessages =
+    messages
+      .slice(
+        0,
+        Math.max(
+          0,
+          messages.length -
+            RECENT_CONTEXT_MESSAGES
+        )
+      )
+      .slice(
+        -SUMMARY_CONTEXT_MESSAGES
+      )
+      .map(
+        normalizeContextMessage
+      )
+      .filter(Boolean) as Array<{
+      role: "user" | "assistant";
+      content: string;
+    }>;
+
+  if (!olderMessages.length) {
+    return "";
+  }
+
+  const userContext =
+    olderMessages
+      .filter(
+        (message) =>
+          message.role ===
+          "user"
+      )
+      .slice(-12)
+      .map(
+        (message) =>
+          `- User: ${message.content.slice(
+            0,
+            260
+          )}`
+      );
+  const assistantContext =
+    olderMessages
+      .filter(
+        (message) =>
+          message.role ===
+          "assistant"
+      )
+      .filter((message) =>
+        /\b(decided|plan|todo|next|fix|issue|error|implemented|changed|recommend|should|need|remaining|blocked|summary|result|verified)\b/i.test(
+          message.content
+        )
+      )
+      .slice(-8)
+      .map(
+        (message) =>
+          `- Assistant: ${message.content.slice(
+            0,
+            260
+          )}`
+      );
+  const chronologicalDigest =
+    olderMessages
+      .slice(-10)
+      .map(
+        (message) =>
+          `- ${message.role}: ${message.content.slice(
+            0,
+            220
+          )}`
+      );
+
+  return [
+    "Older context summary from this chat. Preserve user goals, preferences, decisions, project details, unresolved tasks, and important facts. Do not infer sensitive details beyond what the user provided.",
+    userContext.length
+      ? `User goals, preferences, and facts:\n${userContext.join(
+          "\n"
+        )}`
+      : "",
+    assistantContext.length
+      ? `Prior decisions, tasks, and outcomes:\n${assistantContext.join(
+          "\n"
+        )}`
+      : "",
+    chronologicalDigest.length
+      ? `Recent older-thread digest:\n${chronologicalDigest.join(
+          "\n"
+        )}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n")
+    .slice(0, 5000);
 };
 
 export async function POST(
@@ -624,9 +791,19 @@ ${String(
     // MESSAGE TRIMMING
     // =====================
 
+    const contextMessages =
+      Array.isArray(messages)
+        ? messages
+        : [];
+    const conversationSummary =
+      buildConversationSummary(
+        contextMessages
+      );
     const recentMessages =
-      (messages || [])
-        .slice(-8)
+      contextMessages
+        .slice(
+          -RECENT_CONTEXT_MESSAGES
+        )
         .map(
           (
             m: any
@@ -663,7 +840,7 @@ ${String(
 	        .filter(Boolean)
 	        .join("\n\n");
 
-	    const userContent =
+    const userContent =
 	      attachedImage
 	        ? [
 	            {
@@ -696,9 +873,14 @@ ${String(
 	          ).slice(
 	            0,
 	            14000
-	          );
+		      );
+    const maxOutputTokens =
+      getMaxOutputTokens(
+        messageText,
+        Boolean(attachedPdf)
+      );
 
-	    const result =
+		    const result =
 	      await streamText({
 
         model:
@@ -709,8 +891,7 @@ ${String(
         temperature:
           0.7,
 
-        maxOutputTokens:
-          350,
+        maxOutputTokens,
 
         system: `
 You are Inquire AI.
@@ -745,14 +926,17 @@ How to think:
 - First infer the user's real intent from the words, recent conversation, uploaded files, memory, and available live context.
 - Do not make literal keyword mistakes. For example, "random leads" means the user wants useful lead suggestions, not companies named Random.
 - If the request is ambiguous but answerable, make a reasonable assumption and say it briefly.
-- Ask exactly one focused clarifying question only when a missing detail would cause a bad result.
+- Ask a focused clarifying question only when a missing detail would cause a bad result; otherwise proceed directly.
+- When something is uncertain, say what is uncertain and what evidence would resolve it.
 - For "what should I do next", use the app/business/conversation context instead of answering generically.
 - Keep normal conversation natural. Do not force a tool mode unless the user meaning requires it.
 
 Response style:
 - Be clear, direct, structured, and practical.
+- Be direct. Lead with the answer or recommendation before background.
 - Avoid generic filler and long disclaimers.
 - Give the next useful action, not just background.
+- For business and lead-related help, prioritize actionable steps, data quality, confidence, fit, and clear next actions.
 - For business help, include concrete steps, priorities, tradeoffs, or scripts when useful.
 - Advanced lead generation is a separate product. If the user asks to generate, find, save, score, or enrich leads, direct them to the Lead Engine at /lead-engine and do not perform lead search inside normal chat.
 - For coding help, be precise and explain enough to act.
@@ -762,6 +946,9 @@ Response style:
 
 Persistent memory:
 ${memoryText || "No saved memories yet."}
+
+Conversation Summary:
+${conversationSummary || "No older conversation summary available."}
 
 Live web search results:
 ${webContext || "No live web data used."}
