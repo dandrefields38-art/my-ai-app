@@ -139,17 +139,39 @@ export async function POST(
     });
 
   } catch (
-    err
+    error
   ) {
-
-    console.log(
-      err
+    console.error(
+      "PRO_AI_STRIPE_ERROR",
+      error
     );
+
+    const stripeErrorMessage =
+      error instanceof Error
+        ? error.message
+        : String(error);
+    const typedError =
+      error as {
+        type?: string;
+        code?: string;
+        raw?: unknown;
+      };
 
     return Response.json(
       {
         error:
           "Checkout error",
+        message:
+          stripeErrorMessage,
+        type:
+          typedError.type ||
+          null,
+        code:
+          typedError.code ||
+          null,
+        raw:
+          typedError.raw ||
+          null,
       },
       {
         status: 500,

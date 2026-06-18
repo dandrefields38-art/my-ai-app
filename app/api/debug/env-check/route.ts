@@ -1,0 +1,43 @@
+export async function GET() {
+  return Response.json({
+    stripeSecretKeyExists:
+      Boolean(
+        process.env
+          .STRIPE_SECRET_KEY
+      ),
+    stripePriceIdExists:
+      Boolean(
+        process.env
+          .STRIPE_PRICE_ID
+      ),
+    stripeLeadEngineProPriceIdExists:
+      Boolean(
+        process.env
+          .STRIPE_LEAD_ENGINE_PRO_PRICE_ID
+      ),
+    appUrlExists:
+      Boolean(
+        process.env.APP_URL
+      ),
+    nextPublicAppUrlExists:
+      Boolean(
+        process.env
+          .NEXT_PUBLIC_APP_URL
+      ),
+    supabaseServiceRoleExists:
+      Boolean(
+        process.env
+          .SUPABASE_SERVICE_ROLE_KEY
+      ),
+    nextPublicSupabaseUrlExists:
+      Boolean(
+        process.env
+          .NEXT_PUBLIC_SUPABASE_URL
+      ),
+    nextPublicSupabaseAnonKeyExists:
+      Boolean(
+        process.env
+          .NEXT_PUBLIC_SUPABASE_ANON_KEY
+      ),
+  });
+}
