@@ -45,6 +45,10 @@ export default function BillingPage() {
     useState<string | null>(
       null
     );
+  const [portalError, setPortalError] =
+    useState<string | null>(
+      null
+    );
 
   useEffect(() => {
     let alive = true;
@@ -259,39 +263,53 @@ export default function BillingPage() {
 
   const openPortal =
     async () => {
-      const {
-        data: { session },
-      } = await getCachedSession();
+      setPortalError(null);
 
-      if (!session) {
-        window.location.href =
-          `/login?next=${encodeURIComponent(
-            "/billing"
-          )}`;
-        return;
-      }
+      try {
+        const {
+          data: { session },
+        } = await getCachedSession();
 
-      const headers =
-        await getAuthHeaders();
-      const res =
-        await fetch(
-          "/api/stripe/customer-portal",
-          {
-            method:
-              "POST",
-            headers: {
-              "Content-Type":
-                "application/json",
-              ...headers,
-            },
-          }
+        if (!session) {
+          window.location.href =
+            `/login?next=${encodeURIComponent(
+              "/billing"
+            )}`;
+          return;
+        }
+
+        const headers =
+          await getAuthHeaders();
+        const res =
+          await fetch(
+            "/api/stripe/customer-portal",
+            {
+              method:
+                "POST",
+              headers: {
+                "Content-Type":
+                  "application/json",
+                ...headers,
+              },
+            }
+          );
+        const data =
+          await res.json();
+
+        if (data.url) {
+          window.location.href =
+            data.url;
+          return;
+        }
+
+        setPortalError(
+          data.error ||
+            "Stripe Customer Portal is not available for this account yet."
         );
-      const data =
-        await res.json();
-
-      if (data.url) {
-        window.location.href =
-          data.url;
+      } catch {
+        setPortalError(
+          "Stripe Customer Portal could not be opened. Check your connection and try again."
+        );
       }
     };
 
@@ -411,6 +429,11 @@ export default function BillingPage() {
                 >
                   Start Lead Engine Pro Trial
                 </button>
+              )}
+              {portalError && (
+                <p className="mt-3 text-sm text-red-200">
+                  {portalError}
+                </p>
               )}
             </article>
           </div>
